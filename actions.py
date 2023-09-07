@@ -1,8 +1,8 @@
-import enum
 from typing import TYPE_CHECKING
 
 from cards import Card, Monster, Spell, CardZone
 from entity import Entity
+from targeting import SELF, TARGET
 
 if TYPE_CHECKING:
     from player import Player
@@ -10,22 +10,10 @@ if TYPE_CHECKING:
 
 
 __all__ = (
-    'Targets', 'Action', 'Action',
+    'Action',
     'Hit', 'Kill', 'Heal', 'Buff', 'SwapStats', 'Silence', 'Paralyze',
     'Draw', 'DrawNext', 'Summon', 'Play', 'Send', 'Attack',
 )
-
-
-class Targets(str, enum.Enum):
-    SELF = 'self'
-    TARGET = 'target'
-    KILLER = 'killer'
-    ADJACENT = 'adjacent'
-    PLAYER = 'player'
-    FRONT = 'front'
-    ALLY_MONSTERS = 'ally_monsters'
-    ENEMY_MONSTERS = 'enemy_monsters'
-    ENEMY_HAND = 'enemy_hand'
 
 
 class Action:
@@ -50,7 +38,7 @@ class ActionResult:
 
 
 class Hit(Action):
-    def __init__(self, damage: int, target: 'Targets | Entity' = Targets.TARGET):
+    def __init__(self, damage: int, target: 'Targets | Entity' = TARGET):
         super().__init__(target)
         self.damage = damage
 
@@ -60,7 +48,7 @@ class Hit(Action):
 
 
 class Kill(Action):
-    def __init__(self, target: 'Targets | Entity' = Targets.TARGET):
+    def __init__(self, target: 'TargetSelector | Entity' = TARGET):
         super().__init__(target)
 
     def execute(self, game: 'Game', target: Monster, caller: Entity, **kwargs):
@@ -69,7 +57,7 @@ class Kill(Action):
 
 
 class Heal(Action):
-    def __init__(self, amount: int, target: 'Targets | Entity' = Targets.TARGET):
+    def __init__(self, amount: int, target: 'TargetSelector | Entity' = TARGET):
         super().__init__(target)
         self.amount = amount
 
@@ -79,7 +67,7 @@ class Heal(Action):
 
 
 class Buff(Action):
-    def __init__(self, cost: int = 0, attack: int = 0, hp: int = 0, target: 'Targets | Monster' = Targets.TARGET):
+    def __init__(self, cost: int = 0, attack: int = 0, hp: int = 0, target: 'TargetSelector | Monster' = TARGET):
         super().__init__(target)
         self.cost = cost
         self.attack = attack
@@ -91,7 +79,7 @@ class Buff(Action):
 
 
 class SwapStats(Action):
-    def __init__(self, target: 'Targets | Monster' = Targets.TARGET):
+    def __init__(self, target: 'TargetSelector | Monster' = TARGET):
         super().__init__(target)
 
     def execute(self, target: Monster, **kwargs):
@@ -100,7 +88,7 @@ class SwapStats(Action):
 
 
 class Silence(Action):
-    def __init__(self, target: 'Targets | Monster' = Targets.TARGET):
+    def __init__(self, target: 'TargetSelector | Monster' = TARGET):
         super().__init__(target)
 
     def execute(self, target: Monster, **kwargs):
@@ -109,7 +97,7 @@ class Silence(Action):
 
 
 class Paralyze(Action):
-    def __init__(self, target: 'Targets | Monster' = Targets.TARGET):
+    def __init__(self, target: 'TargetSelector | Monster' = TARGET):
         super().__init__(target)
 
     def execute(self, target: Monster, **kwargs):
@@ -119,7 +107,7 @@ class Paralyze(Action):
 
 
 class Draw(Action):
-    def __init__(self, card: Card, target: 'Targets | Card' = Targets.TARGET):
+    def __init__(self, card: Card, target: 'TargetSelector | Card' = TARGET):
         super().__init__(target)
         self.card = card
 
@@ -129,7 +117,7 @@ class Draw(Action):
 
 
 class DrawNext(Action):
-    def __init__(self, count: int = 1, target: 'Targets | Card' = Targets.TARGET):
+    def __init__(self, count: int = 1, target: 'TargetSelector | Player' = TARGET):
         super().__init__(target)
         self.count = count
 
@@ -138,7 +126,7 @@ class DrawNext(Action):
 
 
 class Summon(Action):
-    def __init__(self, pos: int | None = None, target: 'Targets | Monster' = Targets.TARGET):
+    def __init__(self, pos: int | None = None, target: 'TargetSelector | Monster' = TARGET):
         super().__init__(target)
         self.pos = pos
 
@@ -160,7 +148,7 @@ class Summon(Action):
 
 
 class Play(Summon, AffectsGold):
-    def __init__(self, pos: int | None = None, target: 'Targets | Monster' = Targets.TARGET):
+    def __init__(self, pos: int | None = None, target: 'TargetSelector | Monster' = TARGET):
         super().__init__(pos, target)
 
     def execute(self, game: 'Game', target: Monster, **kwargs):
@@ -171,7 +159,7 @@ class Play(Summon, AffectsGold):
 
 
 class Send(Action):
-    def __init__(self, to: str, target: 'Targets | Card' = Targets.TARGET):
+    def __init__(self, to: str, target: 'TargetSelector | Card' = TARGET):
         super().__init__(target)
         self.to = to
 
@@ -192,7 +180,7 @@ class Send(Action):
 
 
 class Attack(Action):
-    def __init__(self, target: 'Targets | Entity' = Targets.TARGET, attacker: 'Targets | Entity' = Targets.SELF):
+    def __init__(self, target: 'TargetSelector | Entity' = TARGET, attacker: 'TargetSelector | Entity' = SELF):
         super().__init__(target)
         self.attacker = attacker
 

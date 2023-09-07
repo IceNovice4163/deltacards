@@ -1,10 +1,11 @@
 from typing import TYPE_CHECKING
 
-from actions import Targets, Draw, DrawNext, Play
+from actions import Draw, DrawNext, Play
 from cards import Card, Monster, Spell, TargetsEnum, CardZone
 from constants import GOLD_GAINS
 from containers import CardContainer, Deck, Board
 from entity import Entity
+from targeting import SELF
 
 if TYPE_CHECKING:
     from ai import AI
@@ -20,7 +21,7 @@ class Player(Entity):
 
         self.hand = CardContainer([])
         self.board = Board()
-        self.dust_pile = CardContainer([])
+        self.dustpile = CardContainer([])
         self.gold = 1
         self.hp = 30
         self.max_hp = 30
@@ -124,7 +125,7 @@ class Player(Entity):
             self.debug(f"Turn start, [g]{self.gold}G[/g]")
             self.debug(f"Hand: {self.hand}")
 
-        self.game.handle_actions(DrawNext(target=Targets.SELF), caller=self)
+        self.game.handle_actions(DrawNext(target=SELF), caller=self)
 
         for monster in self.board.cards:
             monster.on_turn_start()

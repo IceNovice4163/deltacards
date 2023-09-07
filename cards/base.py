@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING
 
 from actions import *
 from cards import TargetsEnum, Monster, Spell, card, create_card
+from targeting import *
 
 if TYPE_CHECKING:
     from ..player import Player
@@ -12,78 +13,78 @@ if TYPE_CHECKING:
 class Whimsun(Monster):
     def magic(self, game: 'Game', **kwargs):
         player = game.players[self.owner_id]
-        return Buff(target=Targets.SELF, attack=len(player.board) - 1)
+        return Buff(target=SELF, attack=len(player.board) - 1)
 
 
 @card(5)
 class Migosp(Monster):
-    magic = Buff(target=Targets.ADJACENT, hp=1)
+    magic = Buff(target=ADJACENT(SELF), hp=1)
 
 
 @card(6)
 class Vegetoid(Monster):
-    turn_start = Heal(target=Targets.PLAYER, amount=5)
+    turn_start = Heal(target=OWNER, amount=5)
 
 
 @card(10)
 class Ice(Monster):
-    dust = Paralyze(target=Targets.KILLER)
+    dust = Paralyze(target=KILLER)
 
 
 @card(11)
 class Snowdrake(Monster):
     targets = TargetsEnum.ALLY_MONSTER,
-    magic = Buff(target=Targets.TARGET, attack=2)
+    magic = Buff(target=TARGET, attack=2)
 
 
 @card(13)
 class Woshua(Monster):
-    magic = Buff(target=Targets.ENEMY_MONSTERS, attack=-1)
+    magic = Buff(target=BOARD(opponent=True), attack=-1)
 
 
 @card(16)
 class Madjick(Monster):
     targets = TargetsEnum.ALLY_MONSTER, TargetsEnum.ENEMY_MONSTER
-    magic = SwapStats(Targets.TARGET)
+    magic = SwapStats(TARGET)
 
 
 @card(20)
 class Vulkin(Monster):
     targets = TargetsEnum.YOU, TargetsEnum.OPPONENT, TargetsEnum.ALLY_MONSTER, TargetsEnum.ENEMY_MONSTER
-    magic = Hit(target=Targets.TARGET, damage=2)
+    magic = Hit(target=TARGET, damage=2)
 
 
 @card(22)
 class Shyren(Monster):
     targets = TargetsEnum.YOU, TargetsEnum.OPPONENT, TargetsEnum.ALLY_MONSTER, TargetsEnum.ENEMY_MONSTER
-    magic = Heal(target=Targets.TARGET, amount=4)
+    magic = Heal(target=TARGET, amount=4)
 
 
 @card(44)
 class Gyftrot(Monster):
-    magic = DrawNext(target=Targets.PLAYER)
+    magic = DrawNext(target=OWNER)
 
 
 @card(144)
 class ScarfMouse(Monster):
     targets = TargetsEnum.ENEMY_MONSTER,
-    magic = Silence(Targets.TARGET)
+    magic = Silence(TARGET)
 
 
 @card(147)
 class FukuFire(Monster):
-    magic = Hit(target=Targets.FRONT, damage=3)
+    magic = Hit(target=FRONT, damage=3)
 
 
 @card(176)
 class UglyFish(Monster):
     targets = TargetsEnum.ENEMY_MONSTER,
-    magic = Send(target=Targets.TARGET, to='owner_hand')
+    magic = Send(target=TARGET, to='owner_hand')
 
 
 @card(225)
 class FishingRod(Monster):
-    turn_end = DrawNext(target=Targets.PLAYER)
+    turn_end = DrawNext(target=OWNER)
 
 
 @card(235)
@@ -100,4 +101,4 @@ class Punishment(Spell):
     targets = TargetsEnum.ENEMY_MONSTER,
 
     def magic(self, game: 'Game', **kwargs):
-        return Hit(target=Targets.TARGET, damage=3)
+        return Hit(target=TARGET, damage=3)

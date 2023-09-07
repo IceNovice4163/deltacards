@@ -9,6 +9,7 @@ from actions import *
 from cards import Monster, Card, CardZone, Spell
 from entity import Entity
 from player import Player
+from targeting import TargetSelector
 
 
 class GameOver(Exception):
@@ -73,7 +74,7 @@ class Game:
         elif isinstance(defender, Monster):
             defender_board = self.players[defender.owner_id].board
         else:
-            raise ValueError(f"Defender is of invalid type {type(defender)}")
+            raise TypeError(f"Defender is of invalid type {type(defender)}")
 
         if isinstance(defender, Monster) and defender.attributes.taunt:
             return True
@@ -118,55 +119,6 @@ class Game:
         if self.verbose:
             self.print(f"{target} was killed")
 
-    def get_target(self, target_sp: Targets, caller: Entity, **kwargs):
-        if isinstance(target_sp, Card):
-            return [target_sp]
-
-        results = set()
-
-        if target_sp == Targets.SELF:
-            results.add(caller)
-
-        elif target_sp == Targets.TARGET:
-            if kwargs.get('target'):
-                results.add(kwargs.get('target'))
-
-        elif target_sp == Targets.KILLER:
-            if kwargs.get('killer'):
-                results.add(kwargs.get('killer'))
-
-        elif target_sp == Targets.ADJACENT:
-            assert isinstance(caller, Monster)
-            board = self.players[caller.owner_id].board
-
-            if caller.pos > 0 and board[caller.pos - 1]:
-                results.add(board[caller.pos - 1])
-            if caller.pos < board.MAX_CARDS - 1 and board[caller.pos + 1]:
-                results.add(board[caller.pos + 1])
-
-        elif target_sp == Targets.PLAYER:
-            assert isinstance(caller, Card)
-            results.add(self.players[caller.owner_id])
-
-        elif target_sp == Targets.FRONT:
-            assert isinstance(caller, Monster)
-            opponent_board = self.players[caller.owner_id].opponent.board
-
-            if opponent_board[caller.pos]:
-                results.add(opponent_board[caller.pos])
-
-        elif target_sp == Targets.ALLY_MONSTERS:
-            player_id = caller.owner_id if isinstance(caller, Card) else caller.id
-            for monster in self.players[player_id].board.cards:
-                results.add(monster)
-
-        elif target_sp == Targets.ENEMY_MONSTERS:
-            player_id = caller.owner_id if isinstance(caller, Card) else caller.id
-            for monster in self.players[player_id].opponent.board.cards:
-                results.add(monster)
-
-        return results
-
     def handle_actions(
         self,
         actions: Action | list[Action] | Callable,
@@ -183,7 +135,13 @@ class Game:
             actions = [actions]
 
         for action in actions:
-            targets = self.get_target(action.target, caller=caller, **kwargs)
+            if isinstance(action.target, Entity):
+                targets = [action.target]
+            elif isinstance(action.target, TargetSelector):
+                targets = action.target.eval(game=self, caller=caller, **kwargs)
+            else:
+                raise TypeError(f"Action target is of invalid type {action.target}")
+
             kwargs.pop('target', None)
 
             for i in targets:
