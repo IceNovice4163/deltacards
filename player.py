@@ -123,8 +123,11 @@ class Player(Entity):
         if self.verbose:
             self.debug(f"HP left: {self.hp}")
 
-    def heal(self, amount: int):
+    def heal(self, amount: int) -> int:
+        old_hp = self.hp
         self.hp = min(self.hp + amount, self.max_hp)
+
+        return self.hp - old_hp
 
     def on_turn_start(self, turn: int) -> None:
         self.increase_gold(turn)

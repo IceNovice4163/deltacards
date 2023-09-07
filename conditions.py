@@ -28,10 +28,7 @@ class SpentGoldLastTurn(Condition):
         self.spells_only = spells_only
 
     def eval(self, game: 'Game', **kwargs) -> bool:
-        targets = self.selector.eval(game, **kwargs)
-        assert len(targets) == 1
-
-        target = targets[0]
+        target = self.selector.eval_single(game, **kwargs)
         assert isinstance(target, Player)
 
         if game.turn == 1:

@@ -219,7 +219,10 @@ class Monster(Card):
         self.hp -= damage
 
     def heal(self, amount: int):
+        old_hp = self.hp
         self.hp = min(self.hp + amount, self.max_hp)
+
+        return self.hp - old_hp
 
     def buff(self, cost: int = 0, attack: int = 0, hp: int = 0):
         self.buffs.cost += cost

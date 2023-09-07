@@ -11,13 +11,25 @@ if TYPE_CHECKING:
 
 
 __all__ = (
-    'TargetSelector',
+    'LazyProperty', 'TargetSelector',
     'SELF', 'TARGET', 'KILLER', 'OWNER', 'OPPONENT',
     'FRONT', 'LEFT', 'RIGHT', 'ADJACENT',
     'BOARD', 'HAND', 'DECK', 'DUSTPILE',
     'ALLY_MONSTERS', 'ENEMY_MONSTERS', 'ALLIES', 'ENEMIES',
     'RANDOM',
 )
+
+
+class LazyProperty:
+    def __init__(self, selector: 'TargetSelector', attr_name: str):
+        self.selector = selector
+        self.attr_name = attr_name
+
+    def eval(self, game: 'Game', **kwargs) -> int:
+        target = self.selector.eval_single(game, **kwargs)
+        assert isinstance(target, Monster)
+
+        return getattr(target, self.attr_name)
 
 
 class TargetSelector(ABC):
@@ -27,9 +39,21 @@ class TargetSelector(ABC):
     def __sub__(self, other: 'TargetSelector') -> 'OpSelector':
         return OpSelector(operator.sub, self, other)
 
+    def __getattr__(self, name):
+        if name in ('cost', 'attack', 'hp', 'max_hp', 'loop', 'pos'):
+            return LazyProperty(self, name)
+
+        raise AttributeError
+
     @abstractmethod
     def eval(self, game: 'Game', caller: Entity, **kwargs) -> list[Entity]:
         pass
+
+    def eval_single(self, game: 'Game', caller: Entity, **kwargs):
+        targets = self.eval(game, caller, **kwargs)
+        assert len(targets) == 1
+
+        return targets[0]
 
 
 class OpSelector(TargetSelector):
@@ -65,10 +89,7 @@ class BoardSelector(TargetSelector):
         self.opposite = opposite
 
     def eval(self, game: 'Game', **kwargs) -> list[Entity]:
-        targets = self.selector.eval(game, **kwargs)
-        assert len(targets) == 1
-
-        target = targets[0]
+        target = self.selector.eval_single(game, **kwargs)
         assert isinstance(target, Monster)
 
         pos = target.pos + self.x

@@ -97,6 +97,17 @@ class DadSlime(Monster):
         ]
 
 
+@card(72)
+class Melt(Spell):
+    targets = TargetsEnum.ALLY_MONSTER,
+    magic = Hit(target=FRONT(TARGET), damage=TARGET.hp)
+
+
+@card(76)
+class Strength(Spell):
+    magic = Buff(target=RANDOM(ALLY_MONSTERS, n=2), attack=1, hp=1)
+
+
 @card(96)
 class Punishment(Spell):
     targets = TargetsEnum.ENEMY_MONSTER,
@@ -106,6 +117,7 @@ class Punishment(Spell):
         return Hit(target=TARGET, damage=damage)
 
 
-@card(76)
-class Strength(Spell):
-    magic = Buff(target=RANDOM(ALLY_MONSTERS, n=2), attack=1, hp=1)
+@card(132)
+class Pie(Spell):
+    targets = TargetsEnum.ALLY_MONSTER, TargetsEnum.ENEMY_MONSTER
+    magic = Heal(target=TARGET, amount=TARGET.max_hp)

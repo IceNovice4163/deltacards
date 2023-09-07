@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 
 from cards import Card, Monster, Spell, CardZone
 from entity import Entity
-from targeting import SELF, TARGET
+from targeting import *
 
 if TYPE_CHECKING:
     from player import Player
@@ -17,8 +17,26 @@ __all__ = (
 
 
 class Action:
-    def __init__(self, target: 'Targets | Entity'):
+    def __init__(self, target: 'Targets | Entity', **kwargs):
         self.target = target
+
+        self._args = kwargs
+        self._args_cache = {}
+
+    def __getattr__(self, name):
+        if name in self._args:
+            if name in self._args_cache:
+                return self._args_cache[name]
+
+            return self._args[name]
+
+        raise AttributeError
+
+    def eval_args(self, **kwargs):
+        for arg_name, arg in self._args.items():
+            if isinstance(arg, LazyProperty):
+                value = arg.eval(**kwargs)
+                self._args_cache[arg_name] = value
 
     def execute(self, *args, **kwargs):
         pass
@@ -50,8 +68,7 @@ class ActionResult:
 
 class Hit(Action):
     def __init__(self, damage: int, target: 'Targets | Entity' = TARGET):
-        super().__init__(target)
-        self.damage = damage
+        super().__init__(target, damage=damage)
 
     def execute(self, target: 'Player | Monster', **kwargs):
         target.receive_damage(self.damage)
@@ -69,20 +86,16 @@ class Kill(Action):
 
 class Heal(Action):
     def __init__(self, amount: int, target: 'TargetSelector | Entity' = TARGET):
-        super().__init__(target)
-        self.amount = amount
+        super().__init__(target, amount=amount)
 
     def execute(self, target: 'Player | Monster', **kwargs):
-        target.heal(self.amount)
-        return ActionResult(f"{target} recovered {self.amount} HP", affected=[target])
+        hp_recovered = target.heal(self.amount)
+        return ActionResult(f"{target} recovered {hp_recovered} HP", affected=[target])
 
 
 class Buff(Action):
     def __init__(self, cost: int = 0, attack: int = 0, hp: int = 0, target: 'TargetSelector | Monster' = TARGET):
-        super().__init__(target)
-        self.cost = cost
-        self.attack = attack
-        self.hp = hp
+        super().__init__(target, cost=cost, attack=attack, hp=hp)
 
     def execute(self, target: Monster, **kwargs):
         target.buff(self.cost, self.attack, self.hp)
@@ -119,8 +132,7 @@ class Paralyze(Action):
 
 class Draw(Action):
     def __init__(self, card: Card, target: 'TargetSelector | Card' = TARGET):
-        super().__init__(target)
-        self.card = card
+        super().__init__(target, card=card)
 
     def execute(self, target: 'Player', **kwargs):
         card = target.draw(self.card.id)
@@ -129,8 +141,7 @@ class Draw(Action):
 
 class DrawNext(Action):
     def __init__(self, count: int = 1, target: 'TargetSelector | Player' = TARGET):
-        super().__init__(target)
-        self.count = count
+        super().__init__(target, count=count)
 
     def execute(self, target: 'Player', **kwargs):
         target.draw_next(self.count)
@@ -138,8 +149,7 @@ class DrawNext(Action):
 
 class Summon(Action):
     def __init__(self, pos: int | None = None, target: 'TargetSelector | Monster' = TARGET):
-        super().__init__(target)
-        self.pos = pos
+        super().__init__(target, pos=pos)
 
     def execute(self, game: 'Game', target: Monster, **kwargs):
         player = game.players[target.owner_id]
@@ -174,8 +184,7 @@ class Play(Summon, AffectsGold):
 
 class Send(Action):
     def __init__(self, to: str, target: 'TargetSelector | Card' = TARGET):
-        super().__init__(target)
-        self.to = to
+        super().__init__(target, to=to)
 
     def execute(self, game: 'Game', target: 'Card', **kwargs):
         extra_actions = []
@@ -195,8 +204,7 @@ class Send(Action):
 
 class Attack(Action):
     def __init__(self, target: 'TargetSelector | Entity' = TARGET, attacker: 'TargetSelector | Entity' = SELF):
-        super().__init__(target)
-        self.attacker = attacker
+        super().__init__(target, attacker=attacker)
 
     def execute(self, game: 'Game', target: Monster, attacker: Monster | Spell, **kwargs):
         defender = target

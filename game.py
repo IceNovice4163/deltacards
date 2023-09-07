@@ -151,9 +151,10 @@ class Game:
             else:
                 raise TypeError(f"Action target is of invalid type {action.target}")
 
-            kwargs.pop('target', None)
+            original_target = kwargs.pop('target', None)
 
             for i in targets:
+                action.eval_args(game=self, target=original_target, caller=caller, **kwargs)
                 res = action.execute(game=self, target=i, caller=caller, **kwargs)
                 if res:
                     if res.log:
