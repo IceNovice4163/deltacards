@@ -108,6 +108,11 @@ class Strength(Spell):
     magic = Buff(target=RANDOM(ALLY_MONSTERS, n=2), attack=1, hp=1)
 
 
+@card(86)
+class Worsening(Spell):
+    magic = HalveStats(target=ENEMY_MONSTERS & ATTRIBUTE('kr'), round_up=False)
+
+
 @card(96)
 class Punishment(Spell):
     targets = TargetsEnum.ENEMY_MONSTER,
@@ -115,6 +120,12 @@ class Punishment(Spell):
     def magic(self, game: 'Game', **kwargs):
         damage = 4 if game.check(SpentGoldLastTurn(OWNER)) else 3
         return Hit(target=TARGET, damage=damage)
+
+
+@card(129)
+class Knife(Spell):
+    targets = TargetsEnum.ENEMY_MONSTER,
+    magic = Kill(target=TARGET), Hit(target=OWNER, damage=TARGET.cost)
 
 
 @card(132)

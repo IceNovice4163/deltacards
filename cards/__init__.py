@@ -138,7 +138,7 @@ class Card(Entity):
 
 
 class MonsterAttributes:
-    __slots__ = 'charge', 'haste', 'taunt'
+    __slots__ = 'charge', 'haste', 'taunt', 'kr'
 
     def __init__(
         self, charge: bool = False, haste: bool = False, taunt: bool = False,
@@ -146,6 +146,8 @@ class MonsterAttributes:
         self.charge = charge
         self.haste = haste
         self.taunt = taunt
+
+        self.kr = False
 
 
 class Monster(Card):

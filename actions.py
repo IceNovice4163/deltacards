@@ -1,3 +1,4 @@
+import math
 from typing import TYPE_CHECKING
 
 from cards import Card, Monster, Spell, CardZone
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
 
 __all__ = (
     'Action', 'AffectsGold', 'ActionResult',
-    'Hit', 'Kill', 'Heal', 'Buff', 'SwapStats', 'Silence', 'Paralyze',
+    'Hit', 'Kill', 'Heal', 'Buff', 'SwapStats', 'HalveStats', 'Silence', 'Paralyze',
     'Draw', 'DrawNext', 'Summon', 'Play', 'Send', 'Attack',
 )
 
@@ -108,6 +109,17 @@ class SwapStats(Action):
 
     def execute(self, target: Monster, **kwargs):
         target.buff(attack=target.hp - target.attack, hp=target.attack - target.hp)
+        return ActionResult(affected=[target])
+
+
+class HalveStats(Action):
+    def __init__(self, round_up: bool, target: 'TargetSelector | Monster' = TARGET):
+        super().__init__(target, round_up=round_up)
+
+    def execute(self, target: Monster, **kwargs):
+        round_func = math.floor if self.round_up else math.ceil  # negative stat buffs are inverted
+        target.buff(attack=-round_func(target.attack / 2), hp=-round_func(target.hp / 2))
+
         return ActionResult(affected=[target])
 
 

@@ -17,6 +17,7 @@ __all__ = (
     'BOARD', 'HAND', 'DECK', 'DUSTPILE',
     'ALLY_MONSTERS', 'ENEMY_MONSTERS', 'ALLIES', 'ENEMIES',
     'RANDOM',
+    'ATTRIBUTE', 'NOATTRIBUTE',
 )
 
 
@@ -57,16 +58,22 @@ class TargetSelector(ABC):
 
 
 class OpSelector(TargetSelector):
-    def __init__(self, op, var1: TargetSelector, var2: TargetSelector):
+    def __init__(self, op, var1: 'TargetSelector | AttributeConstraint', var2: TargetSelector):
         self.op = op
         self.var1 = var1
         self.var2 = var2
 
     def eval(self, **kwargs) -> list[Entity]:
-        result = self.op(
-            self.var1.eval(**kwargs),
-            self.var2.eval(**kwargs),
-        )
+        if self.op == operator.and_:
+            assert isinstance(self.var1, AttributeConstraint)
+            result = self.var1.eval(selector=self.var2, **kwargs)
+
+        else:
+            result = self.op(
+                self.var1.eval(**kwargs),
+                self.var2.eval(**kwargs),
+            )
+
         return list(set(result))
 
 
@@ -128,6 +135,21 @@ class RandomSelector(TargetSelector):
         return random.sample(self.selector.eval(game, **kwargs), k=self.n)
 
 
+class AttributeConstraint(TargetSelector):
+    def __init__(self, attr_name: str, check_if_true: bool = True):
+        self.attr_name = attr_name
+        self.check_if_true = check_if_true
+
+    def __rand__(self, other):
+        return OpSelector(operator.and_, self, other)
+
+    def eval(self, selector: TargetSelector, **kwargs) -> list[Entity]:
+        return list(filter(
+            lambda m: getattr(m.attributes, self.attr_name) ^ (not self.check_if_true),
+            selector.eval(**kwargs),
+        ))
+
+
 SELF = FunctionSelector(lambda caller, **kwargs: caller)
 TARGET = FunctionSelector(lambda caller, **kwargs: kwargs.get('target'))
 KILLER = FunctionSelector(lambda caller, **kwargs: kwargs.get('killer'))
@@ -149,4 +171,7 @@ ENEMY_MONSTERS = BOARD(opponent=True)
 ALLIES = OWNER + ALLY_MONSTERS
 ENEMIES = OPPONENT + ENEMY_MONSTERS
 
-RANDOM = lambda selector, n=1: RandomSelector(selector, n)
+RANDOM = RandomSelector
+
+ATTRIBUTE = AttributeConstraint
+NOATTRIBUTE = lambda attr_name: AttributeConstraint(attr_name, check_if_true=False)
