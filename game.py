@@ -143,15 +143,15 @@ class Game:
         if isinstance(actions, Action):
             actions = [actions]
 
+        original_target = kwargs.pop('target', None)
+
         for action in actions:
             if isinstance(action.target, Entity):
                 targets = [action.target]
             elif isinstance(action.target, TargetSelector):
-                targets = action.target.eval(game=self, caller=caller, **kwargs)
+                targets = action.target.eval(game=self, target=original_target, caller=caller, **kwargs)
             else:
                 raise TypeError(f"Action target is of invalid type {action.target}")
-
-            original_target = kwargs.pop('target', None)
 
             for i in targets:
                 action.eval_args(game=self, target=original_target, caller=caller, **kwargs)
