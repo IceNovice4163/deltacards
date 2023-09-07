@@ -1,3 +1,4 @@
+from contextvars import ContextVar
 from typing import Callable
 
 from rich import box
@@ -6,10 +7,14 @@ from rich.table import Table, Column
 from rich.theme import Theme
 
 from actions import *
+from conditions import *
 from cards import Monster, Card, CardZone, Spell
 from entity import Entity
 from player import Player
 from targeting import TargetSelector
+
+
+action_caller: ContextVar[Entity] = ContextVar('action_caller')
 
 
 class GameOver(Exception):
@@ -25,7 +30,7 @@ class Game:
 
         self.turn = 1
         self.verbose = True
-        self.log = []
+        self.log: list[ActionResult] = []
 
         custom_theme = Theme({
             'g': 'bold yellow',
@@ -119,12 +124,16 @@ class Game:
         if self.verbose:
             self.print(f"{target} was killed")
 
+    def check(self, condition: Condition) -> bool:
+        return condition.eval(game=self, caller=action_caller.get())
+
     def handle_actions(
         self,
         actions: Action | list[Action] | Callable,
         caller: Entity,
         **kwargs,
     ):
+        token = action_caller.set(caller)
         if isinstance(actions, Callable):
             actions = actions(game=self, caller=caller, **kwargs)
 
@@ -148,20 +157,30 @@ class Game:
                 res = action.execute(game=self, target=i, caller=caller, **kwargs)
                 if res:
                     if res.log:
-                        self.log.append(f"{res.log}, caller: {caller}")
                         if isinstance(caller, Player):
                             caller.debug(res.log)
                         else:
                             self.print(res.log)
 
                     for entity in res.affected:
-                        if entity.hp <= 0\
+                        if (not isinstance(entity, Spell)) and entity.hp <= 0\
                                 and (isinstance(entity, Player) or entity.zone == CardZone.BOARD)\
                                 and not isinstance(action, Kill):
                             self.handle_actions(Kill(), target=entity, caller=caller)
 
                     for extra_action in res.extra_actions:
                         self.handle_actions(extra_action, caller=caller)
+
+                else:
+                    res = ActionResult()
+
+                res.action = action
+                res.player_id = caller.id if isinstance(caller, Player) else caller.owner_id
+                res.source = caller
+                res.turn = self.turn
+                self.log.append(res)
+
+        action_caller.reset(token)
 
     def start_turn(self, player: Player):
         player.on_turn_start(self.turn)

@@ -117,10 +117,12 @@ class Card(Entity):
     def zone(self, new_zone: CardZone):
         self._set_zone(new_zone)
 
-    def copy(self, exact: bool = False, zone: CardZone = CardZone.INVALID):
+    def copy(self, *, exact: bool = False, zone: CardZone = CardZone.INVALID, assign_new_id: bool = False, **kwargs):
         if exact:
             new_card = copy.deepcopy(self)
-            new_card.id = get_next_id()
+            if assign_new_id:
+                new_card.id = get_next_id()
+
             return new_card
 
         return create_card(self.meta.fixed_id, zone=zone)

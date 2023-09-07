@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from actions import Draw, DrawNext, Play
+from actions import *
 from cards import Card, Monster, Spell, TargetsEnum, CardZone
 from constants import GOLD_GAINS
 from containers import CardContainer, Deck, Board
@@ -34,6 +34,9 @@ class Player(Entity):
     def __str__(self):
         return f"Player {self.id}"
 
+    def copy(self, **kwargs):  # TODO
+        return Player(self.id, self.deck, is_first_turn=self.is_first_turn, ai=self.ai)
+
     def debug(self, msg: str) -> None:
         if self.verbose:
             tag = 'hp' if self.is_first_turn else 'atk'
@@ -41,6 +44,14 @@ class Player(Entity):
 
     def print_state(self) -> None:
         self.game.print(f"[g]{self.gold}G[/g], {len(self.deck)} cards")
+
+    def get_gold_spent(self, turn: int, spells_only: bool = False):
+        return sum(
+            -res.action.gold_change for res in self.game.log
+            if res.turn == turn and res.player_id == self.id
+                and isinstance(res.action, AffectsGold) and res.action.gold_change < 0
+                and ((not spells_only) or isinstance(res.source, Spell))
+        )
 
     def increase_gold(self, turn: int):
         try:
@@ -104,11 +115,7 @@ class Player(Entity):
 
         card.owner_id = self.id
 
-        if isinstance(card, Monster):
-            self.game.handle_actions(Play(pos=pos), target=card, caller=self)
-        elif isinstance(card, Spell):
-            card.zone = CardZone.DUSTPILE
-
+        self.game.handle_actions(Play(pos=pos), target=card, caller=self)
         self.game.handle_actions(card.magic, target=target, caller=card)
 
     def receive_damage(self, damage: int):
@@ -151,7 +158,13 @@ class ConsolePlayer(Player):
         sp = text.split()
         action, args = sp[0], sp[1:]
 
-        if action in ('p', 'play'):
+        if action in ('s', 'state'):
+            self.print_state()
+
+        elif action in ('b', 'board'):
+            self.game.print_board()
+
+        elif action in ('p', 'play'):
             card_id = int(args[0])
             try:
                 card = self.hand.get(card_id)

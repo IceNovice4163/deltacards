@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
 from actions import *
+from conditions import *
 from cards import TargetsEnum, Monster, Spell, card, create_card
 from targeting import *
 
@@ -39,7 +40,7 @@ class Snowdrake(Monster):
 
 @card(13)
 class Woshua(Monster):
-    magic = Buff(target=BOARD(opponent=True), attack=-1)
+    magic = Buff(target=ENEMY_MONSTERS, attack=-1)
 
 
 @card(16)
@@ -101,4 +102,10 @@ class Punishment(Spell):
     targets = TargetsEnum.ENEMY_MONSTER,
 
     def magic(self, game: 'Game', **kwargs):
-        return Hit(target=TARGET, damage=3)
+        damage = 4 if game.check(SpentGoldLastTurn(OWNER)) else 3
+        return Hit(target=TARGET, damage=damage)
+
+
+@card(76)
+class Strength(Spell):
+    magic = Buff(target=RANDOM(ALLY_MONSTERS, n=2), attack=1, hp=1)

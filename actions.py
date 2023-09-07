@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 __all__ = (
-    'Action',
+    'Action', 'AffectsGold', 'ActionResult',
     'Hit', 'Kill', 'Heal', 'Buff', 'SwapStats', 'Silence', 'Paralyze',
     'Draw', 'DrawNext', 'Summon', 'Play', 'Send', 'Attack',
 )
@@ -31,10 +31,21 @@ class AffectsGold:
 
 
 class ActionResult:
-    def __init__(self, log: str | None = None, *, affected: list | None = None, extra_actions: list | None = None):
+    def __init__(
+        self,
+        log: str | None = None,
+        *,
+        affected: list[Entity] | None = None,
+        extra_actions: list[Action] | None = None,
+    ):
         self.log = log
-        self.affected = affected or []
+        self.affected = [entity.copy(exact=True, assign_new_id=False) for entity in affected] if affected else []
         self.extra_actions = extra_actions or []
+
+        self.action = None
+        self.player_id = None
+        self.source = None
+        self.turn = None
 
 
 class Hit(Action):
@@ -44,7 +55,7 @@ class Hit(Action):
 
     def execute(self, target: 'Player | Monster', **kwargs):
         target.receive_damage(self.damage)
-        return ActionResult(affected=[target])
+        return ActionResult(f"{target} received {self.damage} damage", affected=[target])
 
 
 class Kill(Action):
@@ -144,18 +155,21 @@ class Summon(Action):
         target.zone = CardZone.BOARD
         target.pos = pos
 
-        return ActionResult(f"Play {target}", affected=[target])
-
 
 class Play(Summon, AffectsGold):
     def __init__(self, pos: int | None = None, target: 'TargetSelector | Monster' = TARGET):
         super().__init__(pos, target)
 
-    def execute(self, game: 'Game', target: Monster, **kwargs):
-        result = super().execute(game, target, **kwargs)
-        self.gold_change = -result.affected[0].cost
+    def execute(self, game: 'Game', target: Card, **kwargs):
+        if isinstance(target, Monster):
+            super().execute(game, target, **kwargs)
 
-        return result
+        if isinstance(target, Spell):
+            target.zone = CardZone.DUSTPILE
+
+        self.gold_change = -target.cost
+
+        return ActionResult(f"Play {target}", affected=[target])
 
 
 class Send(Action):

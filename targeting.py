@@ -1,4 +1,5 @@
 import operator
+import random
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Callable
 
@@ -14,7 +15,8 @@ __all__ = (
     'SELF', 'TARGET', 'KILLER', 'OWNER', 'OPPONENT',
     'FRONT', 'LEFT', 'RIGHT', 'ADJACENT',
     'BOARD', 'HAND', 'DECK', 'DUSTPILE',
-    'ALLIES', 'ENEMIES',
+    'ALLY_MONSTERS', 'ENEMY_MONSTERS', 'ALLIES', 'ENEMIES',
+    'RANDOM',
 )
 
 
@@ -96,6 +98,15 @@ class ZoneSelector(TargetSelector):
         return getattr(player, self.zone.value).cards
 
 
+class RandomSelector(TargetSelector):
+    def __init__(self, selector: TargetSelector, n: int = 1):
+        self.selector = selector
+        self.n = n
+
+    def eval(self, game: 'Game', **kwargs) -> list[Entity]:
+        return random.sample(self.selector.eval(game, **kwargs), k=self.n)
+
+
 SELF = FunctionSelector(lambda caller, **kwargs: caller)
 TARGET = FunctionSelector(lambda caller, **kwargs: kwargs.get('target'))
 KILLER = FunctionSelector(lambda caller, **kwargs: kwargs.get('killer'))
@@ -112,5 +123,9 @@ HAND = lambda opponent=False: ZoneSelector(CardZone.HAND, opponent)
 DECK = lambda opponent=False: ZoneSelector(CardZone.DECK, opponent)
 DUSTPILE = lambda opponent=False: ZoneSelector(CardZone.DUSTPILE, opponent)
 
-ALLIES = OWNER + BOARD()
-ENEMIES = OPPONENT + BOARD(opponent=True)
+ALLY_MONSTERS = BOARD()
+ENEMY_MONSTERS = BOARD(opponent=True)
+ALLIES = OWNER + ALLY_MONSTERS
+ENEMIES = OPPONENT + ENEMY_MONSTERS
+
+RANDOM = lambda selector, n=1: RandomSelector(selector, n)
