@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 __all__ = (
-    'LazyProperty', 'TargetSelector',
+    'LazyProperty', 'TargetSelector', 'SearchCards', 'SearchCard',
     'SELF', 'TARGET', 'KILLER', 'OWNER', 'OPPONENT',
     'FRONT', 'LEFT', 'RIGHT', 'ADJACENT',
     'BOARD', 'HAND', 'DECK', 'DUSTPILE',
@@ -26,9 +26,27 @@ class LazyProperty:
         self.selector = selector
         self.attr_name = attr_name
 
+    def __eq__(self, other):
+        return PropertyConstraint(operator.eq, self.attr_name, other)
+
+    def __ne__(self, other):
+        return PropertyConstraint(operator.ne, self.attr_name, other)
+
+    def __lt__(self, other):
+        return PropertyConstraint(operator.lt, self.attr_name, other)
+
+    def __le__(self, other):
+        return PropertyConstraint(operator.le, self.attr_name, other)
+
+    def __ge__(self, other):
+        return PropertyConstraint(operator.ge, self.attr_name, other)
+
+    def __gt__(self, other):
+        return PropertyConstraint(operator.gt, self.attr_name, other)
+
     def eval(self, game: 'Game', **kwargs) -> int:
         target = self.selector.eval_single(game, **kwargs)
-        assert isinstance(target, Monster)
+        assert isinstance(target, Entity)
 
         return getattr(target, self.attr_name)
 
@@ -58,15 +76,22 @@ class TargetSelector(ABC):
 
 
 class OpSelector(TargetSelector):
-    def __init__(self, op, var1: 'TargetSelector | AttributeConstraint', var2: TargetSelector):
+    def __init__(self, op, var1: 'TargetSelector | AttributeConstraint | LazyProperty', var2: TargetSelector):
         self.op = op
         self.var1 = var1
         self.var2 = var2
 
     def eval(self, **kwargs) -> list[Entity]:
         if self.op == operator.and_:
-            assert isinstance(self.var1, AttributeConstraint)
-            result = self.var1.eval(selector=self.var2, **kwargs)
+            assert isinstance(self.var1, TargetSelector)
+            assert isinstance(self.var2, AttributeConstraint)
+            result = self.var2.eval(entities=self.var1.eval(**kwargs))
+
+        elif self.op in (operator.eq, operator.ne, operator.lt, operator.le, operator.ge, operator.gt):
+            return self.op(
+                self.var1.eval(**kwargs) if isinstance(self.var1, LazyProperty) else self.var1,
+                self.var2.eval(**kwargs) if isinstance(self.var2, LazyProperty) else self.var2,
+            )
 
         else:
             result = self.op(
@@ -135,19 +160,57 @@ class RandomSelector(TargetSelector):
         return random.sample(self.selector.eval(game, **kwargs), k=self.n)
 
 
+class PropertyConstraint(TargetSelector):
+    def __init__(self, op, attr_name: str, value: int):
+        self.op = op
+        self.attr_name = attr_name
+        self.value = value
+
+    def eval(self, entities: list[Card], **kwargs) -> list[Entity]:
+        return list(filter(
+            lambda card: self.op(getattr(card, self.attr_name), self.value),
+            entities,
+        ))
+
+
 class AttributeConstraint(TargetSelector):
     def __init__(self, attr_name: str, check_if_true: bool = True):
         self.attr_name = attr_name
         self.check_if_true = check_if_true
 
     def __rand__(self, other):
-        return OpSelector(operator.and_, self, other)
+        return OpSelector(operator.and_, other, self)
 
-    def eval(self, selector: TargetSelector, **kwargs) -> list[Entity]:
+    def eval(self, entities: list[Monster], **kwargs) -> list[Entity]:
         return list(filter(
             lambda m: getattr(m.attributes, self.attr_name) ^ (not self.check_if_true),
-            selector.eval(**kwargs),
+            entities,
         ))
+
+
+class SearchCards(TargetSelector):
+    def __init__(self, selector: TargetSelector, *args, n: int = 1):
+        self.selector = selector
+        self.constraints = args
+        self.n = n
+
+    def eval(self, **kwargs) -> list[Entity]:
+        result = self.selector.eval(**kwargs)
+        for constraint in self.constraints:
+            result = constraint.eval(entities=result)
+
+        return result[:self.n]
+
+
+class SearchCard(TargetSelector):
+    def __init__(self, selector: TargetSelector, *args):
+        self.selector = selector
+        self.constraints = args
+
+    def eval(self, **kwargs) -> Entity:
+        return next(iter(
+            SearchCards(self.selector, *self.constraints).eval(**kwargs)
+        ), None)
 
 
 SELF = FunctionSelector(lambda caller, **kwargs: caller)

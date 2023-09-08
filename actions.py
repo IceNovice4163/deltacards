@@ -33,9 +33,13 @@ class Action:
 
         raise AttributeError
 
+    def __mul__(self, count: int):
+        assert isinstance(count, int)
+        return [self] * count
+
     def eval_args(self, **kwargs):
         for arg_name, arg in self._args.items():
-            if isinstance(arg, LazyProperty):
+            if hasattr(arg, 'eval'):
                 value = arg.eval(**kwargs)
                 self._args_cache[arg_name] = value
 
@@ -143,10 +147,13 @@ class Paralyze(Action):
 
 
 class Draw(Action):
-    def __init__(self, card: Card, target: 'TargetSelector | Card' = TARGET):
+    def __init__(self, card: Card | SearchCard, target: 'TargetSelector | Card' = TARGET):
         super().__init__(target, card=card)
 
     def execute(self, target: 'Player', **kwargs):
+        if not self.card:
+            return
+
         card = target.draw(self.card.id)
         return ActionResult(f"Draw {card}")
 

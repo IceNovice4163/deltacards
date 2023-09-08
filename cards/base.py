@@ -108,6 +108,11 @@ class Strength(Spell):
     magic = Buff(target=RANDOM(ALLY_MONSTERS, n=2), attack=1, hp=1)
 
 
+@card(83)
+class Shopping(Spell):
+    magic = Draw(target=OWNER, card=SearchCard(DECK(), TARGET.cost <= 5)) * 3
+
+
 @card(86)
 class Worsening(Spell):
     magic = HalveStats(target=ENEMY_MONSTERS & ATTRIBUTE('kr'), round_up=False)
