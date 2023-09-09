@@ -175,6 +175,7 @@ class Game:
                 else:
                     res = ActionResult()
 
+                res.affected = [entity.copy(exact=True, assign_new_id=False) for entity in res.affected]
                 res.action = action
                 res.player_id = caller.id if isinstance(caller, Player) else caller.owner_id
                 res.source = caller

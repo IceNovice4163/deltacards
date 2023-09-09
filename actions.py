@@ -62,7 +62,7 @@ class ActionResult:
         extra_actions: list[Action] | None = None,
     ):
         self.log = log
-        self.affected = [entity.copy(exact=True, assign_new_id=False) for entity in affected] if affected else []
+        self.affected = affected or []
         self.extra_actions = extra_actions or []
 
         self.action = None
