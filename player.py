@@ -34,6 +34,10 @@ class Player(Entity):
     def __str__(self):
         return f"Player {self.id}"
 
+    @property
+    def owner_id(self):
+        return self.id
+
     def copy(self, **kwargs):  # TODO
         return Player(self.id, self.deck, is_first_turn=self.is_first_turn, ai=self.ai)
 
@@ -81,7 +85,8 @@ class Player(Entity):
             else:
                 self.fatigue_counter += 1
                 self.debug(f"Fatigue! {self.fatigue_counter} damage")
-                self.receive_damage(self.fatigue_counter)
+                # TODO: use extra_actions
+                self.game.handle_actions(Hit(damage=self.fatigue_counter), target=self, caller=self)
 
     def get_target_choices(self, card: Card) -> list['Player | Card']:
         targets = []
@@ -128,6 +133,10 @@ class Player(Entity):
         self.hp = min(self.hp + amount, self.max_hp)
 
         return self.hp - old_hp
+
+    def buff(self, hp: int = 0):
+        self.hp += hp
+        self.max_hp += hp
 
     def on_turn_start(self, turn: int) -> None:
         self.increase_gold(turn)

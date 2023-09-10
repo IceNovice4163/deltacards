@@ -102,8 +102,13 @@ class Buff(Action):
     def __init__(self, cost: int = 0, attack: int = 0, hp: int = 0, target: 'TargetSelector | Monster' = TARGET):
         super().__init__(target, cost=cost, attack=attack, hp=hp)
 
-    def execute(self, target: Monster, **kwargs):
-        target.buff(self.cost, self.attack, self.hp)
+    def execute(self, target: 'Monster | Player', **kwargs):
+        if isinstance(target, Monster):
+            target.buff(self.cost, self.attack, self.hp)
+        elif isinstance(target, Player):
+            assert self.cost == 0 and self.attack == 0
+            target.buff(hp=self.hp)
+
         return ActionResult(affected=[target])
 
 

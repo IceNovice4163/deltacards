@@ -1,3 +1,4 @@
+import itertools
 from contextvars import ContextVar
 from typing import Callable
 
@@ -127,12 +128,82 @@ class Game:
     def check(self, condition: Condition) -> bool:
         return condition.eval(game=self, caller=action_caller.get())
 
+    def _call_event_handlers(self, pre: bool, action: Action, caller: Entity, **kwargs) -> bool:
+        should_cancel_event = False
+        for entity in itertools.chain(
+            self.players.values(),
+            (monster for player in self.players.values() for monster in player.board.cards),
+        ):
+            if entity is caller:
+                continue
+
+            event_handlers = entity.pre_event_handlers if pre else entity.post_event_handlers
+            for action_class, event_handler in event_handlers.items():
+                if isinstance(action, action_class):
+                    if self.handle_actions(
+                        actions=event_handler(entity, game=self, caller=caller, **kwargs),
+                        caller=caller,
+                        **kwargs,
+                    ):
+                        should_cancel_event = True
+
+        return should_cancel_event
+
+    def handle_action(
+        self,
+        action: Action,
+        caller: Entity,
+        original_target: Entity,
+        **kwargs,
+    ):
+        if isinstance(action.target, Entity):
+            targets = [action.target]
+        elif isinstance(action.target, TargetSelector):
+            targets = action.target.eval(game=self, target=original_target, caller=caller, **kwargs)
+        else:
+            raise TypeError(f"Action target is of invalid type {action.target}")
+
+        for i in targets:
+            action.eval_args(game=self, target=original_target, caller=caller, **kwargs)
+            should_cancel_event = self._call_event_handlers(pre=True, action=action, target=i, caller=caller, **kwargs)
+            if should_cancel_event:
+                continue
+
+            res = action.execute(game=self, target=i, caller=caller, **kwargs)
+            if not res:
+                res = ActionResult()
+
+            self.log.append(res)
+
+            if res.log:
+                if isinstance(caller, Player):
+                    caller.debug(res.log)
+                elif self.verbose:
+                    self.print(res.log)
+
+            self._call_event_handlers(pre=False, action=action, target=i, caller=caller, **kwargs)
+
+            for entity in res.affected:
+                if (not isinstance(entity, Spell)) and entity.hp <= 0\
+                        and (isinstance(entity, Player) or entity.zone == CardZone.BOARD)\
+                        and not isinstance(action, Kill):
+                    self.handle_actions(Kill(), target=entity, caller=caller)
+
+            for extra_action in res.extra_actions:
+                self.handle_actions(extra_action, caller=caller)
+
+            res.affected = [entity.copy(exact=True, assign_new_id=False) for entity in res.affected]
+            res.action = action
+            res.player_id = caller.id if isinstance(caller, Player) else caller.owner_id
+            res.source = caller
+            res.turn = self.turn
+
     def handle_actions(
         self,
         actions: Action | list[Action] | Callable,
         caller: Entity,
         **kwargs,
-    ):
+    ) -> bool | None:
         token = action_caller.set(caller)
         if isinstance(actions, Callable):
             actions = actions(game=self, caller=caller, **kwargs)
@@ -142,47 +213,20 @@ class Game:
 
         if isinstance(actions, Action):
             actions = [actions]
+        elif isinstance(actions, bool):
+            return actions
 
         original_target = kwargs.pop('target', None)
 
+        should_cancel_event = False
         for action in actions:
-            if isinstance(action.target, Entity):
-                targets = [action.target]
-            elif isinstance(action.target, TargetSelector):
-                targets = action.target.eval(game=self, target=original_target, caller=caller, **kwargs)
-            else:
-                raise TypeError(f"Action target is of invalid type {action.target}")
-
-            for i in targets:
-                action.eval_args(game=self, target=original_target, caller=caller, **kwargs)
-                res = action.execute(game=self, target=i, caller=caller, **kwargs)
-                if res:
-                    if res.log:
-                        if isinstance(caller, Player):
-                            caller.debug(res.log)
-                        else:
-                            self.print(res.log)
-
-                    for entity in res.affected:
-                        if (not isinstance(entity, Spell)) and entity.hp <= 0\
-                                and (isinstance(entity, Player) or entity.zone == CardZone.BOARD)\
-                                and not isinstance(action, Kill):
-                            self.handle_actions(Kill(), target=entity, caller=caller)
-
-                    for extra_action in res.extra_actions:
-                        self.handle_actions(extra_action, caller=caller)
-
-                else:
-                    res = ActionResult()
-
-                res.affected = [entity.copy(exact=True, assign_new_id=False) for entity in res.affected]
-                res.action = action
-                res.player_id = caller.id if isinstance(caller, Player) else caller.owner_id
-                res.source = caller
-                res.turn = self.turn
-                self.log.append(res)
+            if isinstance(action, Action):
+                self.handle_action(action, caller, original_target, **kwargs)
+            elif isinstance(action, bool):
+                should_cancel_event = action
 
         action_caller.reset(token)
+        return should_cancel_event
 
     def start_turn(self, player: Player):
         player.on_turn_start(self.turn)

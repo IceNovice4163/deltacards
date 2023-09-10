@@ -106,7 +106,7 @@ class FunctionSelector(TargetSelector):
     def __init__(self, function: Callable):
         self.function = function
 
-    def eval(self, game: 'Game', caller: Card, **kwargs) -> list[Entity]:
+    def eval(self, game: 'Game', caller: Entity, **kwargs) -> list[Entity]:
         result = self.function(caller=caller, game=game, **kwargs)
         if not isinstance(result, list):
             result = [result]
@@ -143,7 +143,7 @@ class ZoneSelector(TargetSelector):
         self.zone = zone
         self.opponent = opponent
 
-    def eval(self, game: 'Game', caller: Card, **kwargs) -> list[Card]:
+    def eval(self, game: 'Game', caller: Entity, **kwargs) -> list[Card]:
         player = game.players[caller.owner_id]
         if self.opponent:
             player = player.opponent
