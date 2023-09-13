@@ -1,4 +1,5 @@
 import math
+import random
 from typing import TYPE_CHECKING
 
 from cards import Card, Monster, Spell, CardZone
@@ -13,7 +14,8 @@ if TYPE_CHECKING:
 __all__ = (
     'Action', 'AffectsGold', 'ActionResult',
     'Hit', 'Kill', 'Heal', 'Buff', 'SwapStats', 'HalveStats', 'Silence', 'Paralyze',
-    'Draw', 'DrawNext', 'Summon', 'Play', 'Send', 'Attack',
+    'Draw', 'DrawNext', 'Summon', 'Play', 'Send', 'Attack', 'Earn',
+    'AddCardToDeck',
 )
 
 
@@ -84,7 +86,7 @@ class Kill(Action):
     def __init__(self, target: 'TargetSelector | Entity' = TARGET):
         super().__init__(target)
 
-    def execute(self, game: 'Game', target: Monster, caller: Entity, **kwargs):
+    def execute(self, game: 'Game', target: 'Monster | Player', caller: Entity, **kwargs):
         game.kill(target, caller)
         return ActionResult(affected=[target])
 
@@ -103,6 +105,7 @@ class Buff(Action):
         super().__init__(target, cost=cost, attack=attack, hp=hp)
 
     def execute(self, target: 'Monster | Player', **kwargs):
+        from player import Player  # TODO
         if isinstance(target, Monster):
             target.buff(self.cost, self.attack, self.hp)
         elif isinstance(target, Player):
@@ -242,3 +245,36 @@ class Attack(Action):
         defender.receive_damage(attacker.attack)
 
         return ActionResult(f"{attacker} attacked {defender}", affected=[defender, attacker])
+
+
+class Earn(Action, AffectsGold):
+    def __init__(self, amount: int, target: 'TargetSelector | Monster' = TARGET):
+        super().__init__(target, amount=amount)
+
+    def execute(self, game: 'Game', target: Card, **kwargs):
+        assert self.amount >= 0
+        self.gold_change = self.amount
+
+        return ActionResult(f"Earn {self.amount}G")
+
+
+class AddCardToDeck(Action):
+    def __init__(self, pos: str = 'random', target: 'TargetSelector | Monster' = TARGET):
+        super().__init__(target, pos=pos)
+
+    def execute(self, game: 'Game', target: Monster, **kwargs):
+        player = game.players[target.owner_id]
+
+        if self.pos == 'random':
+            pos = random.randint(0, len(player.deck))
+        elif self.pos == 'top':
+            pos = 0
+        elif self.pos == 'bottom':
+            pos = None
+        else:
+            raise ValueError(f"Invalid position: {self.pos}")
+
+        player.deck.add(target, pos=pos)
+        target.zone = CardZone.DECK
+
+        return ActionResult(affected=[target])

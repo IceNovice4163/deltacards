@@ -131,7 +131,7 @@ class Game:
     def _call_event_handlers(self, pre: bool, action: Action, caller: Entity, **kwargs) -> bool:
         should_cancel_event = False
         for entity in itertools.chain(
-            self.players.values(),
+            (artifact for player in self.players.values() for artifact in player.artifacts),
             (monster for player in self.players.values() for monster in player.board.cards),
         ):
             if entity is caller:
@@ -249,6 +249,9 @@ class Game:
     def run(self):
         for player in self.players.values():
             player.draw_next(3)
+
+        for player in self.players.values():
+            player.on_game_start()
 
         while True:
             self.turn_loop()

@@ -1,6 +1,7 @@
 import colorama
 
 from ai import SimpleAI
+from artifacts import ARTIFACTS
 from cards import Monster, Spell, load
 from containers import Deck
 from game import Game, GameOver
@@ -17,12 +18,21 @@ DECK = {
 def main():
     colorama.just_fix_windows_console()
 
-    import cards.base  # TODO
     load()
 
-    player1 = ConsolePlayer(1, Deck(DECK['cardIds'], shuffle=True), is_first_turn=True, ai=None)
-    # player1 = Player(1, Deck(DECK['cardIds'], shuffle=True), is_first_turn=True, ai=SimpleAI)
-    player2 = Player(2, Deck(DECK['cardIds'], shuffle=True), is_first_turn=False, ai=SimpleAI)
+    player1 = ConsolePlayer(
+        1,
+        Deck(DECK['cardIds'], shuffle=True),
+        artifacts=[ARTIFACTS[artifact](owner_id=1) for artifact in DECK['artifactIds']],
+        is_first_turn=True,
+    )
+    player2 = Player(
+        2,
+        Deck(DECK['cardIds'], shuffle=True),
+        artifacts=[ARTIFACTS[artifact](owner_id=2) for artifact in DECK['artifactIds']],
+        is_first_turn=False,
+        ai=SimpleAI,
+    )
 
     # for card in player1.deck.cards:
     #     if type(card) in (Monster, Spell):

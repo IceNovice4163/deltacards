@@ -19,8 +19,11 @@ class CardContainer:
     def cards(self):
         return self._cards
 
-    def add(self, card: Card) -> None:
-        self.cards.append(card)
+    def add(self, card: Card, pos: int | None = None) -> None:
+        if pos is not None:
+            self.cards.insert(pos, card)
+        else:
+            self.cards.append(card)
 
     def get(self, card_id: int) -> Card:
         try:

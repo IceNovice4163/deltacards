@@ -4,6 +4,15 @@ from typing import TYPE_CHECKING, Type
 if TYPE_CHECKING:
     from actions import Action
 
+LAST_ID = 10
+
+
+def get_next_id():
+    global LAST_ID
+
+    LAST_ID += 1
+    return LAST_ID
+
 
 class EntityMeta(ABCMeta):
     def __new__(cls, name, bases, attrs):
@@ -14,10 +23,13 @@ class EntityMeta(ABCMeta):
 
 
 class Entity(ABC, metaclass=EntityMeta):
-    __slots__ = ()
+    __slots__ = 'id',
 
     pre_event_handlers: dict
     post_event_handlers: dict
+
+    def __init__(self):
+        self.id = get_next_id()
 
     @abstractmethod
     def copy(self, **kwargs):

@@ -1,9 +1,9 @@
 import operator
 import random
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Type
 
-from cards import Card, Monster, CardZone
+from cards import Card, Monster, Spell, CardZone
 from entity import Entity
 
 if TYPE_CHECKING:
@@ -18,6 +18,7 @@ __all__ = (
     'ALLY_MONSTERS', 'ENEMY_MONSTERS', 'ALLIES', 'ENEMIES',
     'RANDOM',
     'ATTRIBUTE', 'NOATTRIBUTE',
+    'IS_MONSTER', 'IS_SPELL',
 )
 
 
@@ -166,6 +167,9 @@ class PropertyConstraint(TargetSelector):
         self.attr_name = attr_name
         self.value = value
 
+    def __rand__(self, other):
+        return OpSelector(operator.and_, other, self)
+
     def eval(self, entities: list[Card], **kwargs) -> list[Entity]:
         return list(filter(
             lambda card: self.op(getattr(card, self.attr_name), self.value),
@@ -184,6 +188,20 @@ class AttributeConstraint(TargetSelector):
     def eval(self, entities: list[Monster], **kwargs) -> list[Entity]:
         return list(filter(
             lambda m: getattr(m.attributes, self.attr_name) ^ (not self.check_if_true),
+            entities,
+        ))
+
+
+class TypeConstraint(TargetSelector):
+    def __init__(self, type_: Type[Entity]):
+        self.type_ = type_
+
+    def __rand__(self, other):
+        return OpSelector(operator.and_, other, self)
+
+    def eval(self, entities: list[Entity], **kwargs) -> list[Entity]:
+        return list(filter(
+            lambda card: isinstance(card, self.type_),
             entities,
         ))
 
@@ -238,3 +256,6 @@ RANDOM = RandomSelector
 
 ATTRIBUTE = AttributeConstraint
 NOATTRIBUTE = lambda attr_name: AttributeConstraint(attr_name, check_if_true=False)
+
+IS_MONSTER = TypeConstraint(Monster)
+IS_SPELL = TypeConstraint(Spell)

@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
 from actions import *
+from artifacts import Artifact
 from cards import Card, Monster, Spell, TargetsEnum, CardZone
 from constants import GOLD_GAINS
 from containers import CardContainer, Deck, Board
@@ -13,9 +14,10 @@ if TYPE_CHECKING:
 
 
 class Player(Entity):
-    def __init__(self, player_id: int, deck: Deck, is_first_turn: bool, ai: 'Type[AI] | None' = None):
+    def __init__(self, player_id: int, deck: Deck, artifacts: list[Artifact], is_first_turn: bool, ai: 'Type[AI] | None' = None):
         self.id = player_id
         self.deck = deck
+        self.artifacts = artifacts
         self.is_first_turn = is_first_turn
         self.ai = ai() if ai else None
 
@@ -39,7 +41,7 @@ class Player(Entity):
         return self.id
 
     def copy(self, **kwargs):  # TODO
-        return Player(self.id, self.deck, is_first_turn=self.is_first_turn, ai=self.ai)
+        return Player(self.id, self.deck, self.artifacts, is_first_turn=self.is_first_turn)
 
     def debug(self, msg: str) -> None:
         if self.verbose:
@@ -138,6 +140,10 @@ class Player(Entity):
         self.hp += hp
         self.max_hp += hp
 
+    def on_game_start(self) -> None:
+        for artifact in self.artifacts:
+            self.game.handle_actions(artifact.game_start, caller=artifact, owner=self)
+
     def on_turn_start(self, turn: int) -> None:
         self.increase_gold(turn)
         if self.verbose:
@@ -152,6 +158,9 @@ class Player(Entity):
             if hasattr(monster, 'turn_start'):
                 self.game.handle_actions(monster.turn_start, caller=monster)
 
+        for artifact in self.artifacts:
+            self.game.handle_actions(artifact.turn_start, caller=artifact, owner=self)
+
     def on_turn_end(self, turn: int) -> None:
         self.debug("Turn end")
         for monster in self.board.cards:
@@ -159,6 +168,9 @@ class Player(Entity):
 
             if hasattr(monster, 'turn_end'):
                 self.game.handle_actions(monster.turn_end, caller=monster)
+
+        for artifact in self.artifacts:
+            self.game.handle_actions(artifact.turn_end, caller=artifact, owner=self)
 
     def handle_turn(self) -> None:
         if self.ai:

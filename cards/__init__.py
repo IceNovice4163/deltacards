@@ -2,26 +2,18 @@ import copy
 import json
 from enum import Enum
 
-from entity import Entity
+from entity import Entity, get_next_id
 
-LAST_ID = 10
 cards = {}
 
 
-def get_next_id():
-    global LAST_ID
-
-    LAST_ID += 1
-    return LAST_ID
-
-
-def card(card_id):
-    def wrapper(card_class):
+def card(card_id: int):
+    def wrapper(class_):
         if card_id in cards:
-            raise ValueError(f"ID {card_id} is already assigned")
+            raise ValueError(f"Card with ID {card_id} already exists")
 
-        cards[card_id] = card_class
-        return card_class
+        cards[card_id] = class_
+        return class_
 
     return wrapper
 
@@ -74,16 +66,17 @@ class CardMetadata:
 
 
 class Card(Entity):
-    __slots__ = 'base', 'buffs', 'meta', 'id', 'creator_id', 'owner_id', 'extra', 'loop', '_cost', '_zone'
+    __slots__ = 'base', 'buffs', 'meta', 'creator_id', 'owner_id', 'extra', 'loop', '_cost', '_zone'
     targets = ()
 
     def __init__(
         self, base: BaseStats, fixed_id: int, name: str, rarity: str,
     ):
+        super().__init__()
+
         self.base = base
         self.buffs = CardBuffs()
         self.meta = CardMetadata(fixed_id, name, rarity)
-        self.id = get_next_id()
         self.creator_id = None
         self.owner_id = None
         self.extra = {}
@@ -100,7 +93,7 @@ class Card(Entity):
         if new_zone == self._zone:
             return
 
-        if self._zone == CardZone.BOARD:
+        if self._zone == CardZone.BOARD and new_zone != CardZone.DUSTPILE:
             self._reset()
 
         self._zone = new_zone
@@ -315,6 +308,9 @@ def create_card(
 
 
 def load():
+    import cards.base
+    import cards.tokens
+
     with open('cards.json') as f:
         for card_data in json.load(f):
             CARDS[card_data['fixedId']] = card_data
