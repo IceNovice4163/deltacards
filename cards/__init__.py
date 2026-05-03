@@ -1,8 +1,14 @@
-import copy
 import json
-from enum import Enum
+from dataclasses import asdict, dataclass
+from typing import Generic, TypeVar
 
-from entity import Entity, get_next_id
+from cards.library import LIBRARY
+from cards.templates import CardTemplate, MonsterTemplate
+from entity import Entity
+from enums import CardKeyword, CardRarity, CardStatusId, CardType, CardZone, PlayerId
+from snapshots import CardSnapshot, MonsterSnapshot, SpellSnapshot
+
+TTemplate = TypeVar('TTemplate', bound=CardTemplate)
 
 cards = {}
 
@@ -18,299 +24,487 @@ def card(card_id: int):
     return wrapper
 
 
-class TargetsEnum(Enum):
-    YOU = 'you'
-    OPPONENT = 'opponent'
-    ALLY_MONSTER = 'ally_monster'
-    ENEMY_MONSTER = 'enemy_monster'
-    HAND = 'hand'
-    DECK = 'deck'
-
-
-class CardZone(Enum):
-    INVALID = 'invalid'
-    BOARD = 'board'
-    HAND = 'hand'
-    DECK = 'deck'
-    DUSTPILE = 'dustpile'
-    BURNED = 'burned'
-
-
+@dataclass(frozen=True, slots=True)
 class BaseStats:
-    __slots__ = 'cost', 'attack', 'hp', 'loop'
+    cost: int
+    attack: int | None = None
+    hp: int | None = None
 
-    def __init__(self, cost: int, attack: int | None = None, hp: int | None = None, loop: int = 0):
-        self.cost = cost
-        self.attack = attack
-        self.hp = hp
-        self.loop = loop
+    def serialize(self) -> dict:
+        return {
+            'cost': self.cost,
+            'attack': self.attack,
+            'hp': self.hp,
+        }
 
 
+@dataclass(slots=True)
 class CardBuffs:
-    __slots__ = 'cost', 'attack', 'max_hp'
+    cost: int = 0
+    attack: int = 0
+    max_hp: int = 0
 
-    def __init__(self):
-        self.cost = 0
-        self.attack = 0
-        self.max_hp = 0
-
-
-class CardMetadata:
-    __slots__ = 'fixed_id', 'name', 'rarity'
-
-    def __init__(self, fixed_id: int, name: str, rarity: str):
-        self.fixed_id = fixed_id
-
-        self.name = name
-        self.rarity = rarity
+    def serialize(self) -> dict:
+        return {
+            'cost': self.cost,
+            'attack': self.attack,
+            'max_hp': self.max_hp,
+        }
 
 
-class Card(Entity):
-    __slots__ = 'base', 'buffs', 'meta', 'creator_id', 'owner_id', 'extra', 'loop', '_cost', '_zone'
-    targets = ()
+@dataclass(frozen=True, slots=True)
+class CaughtCardData:
+    template_id: int
+    controller_id: PlayerId
+
+    def serialize(self) -> dict:
+        return {
+            'template_id': self.template_id,
+            'controller_id': self.controller_id.value,
+        }
+
+
+class Card(Entity, Generic[TTemplate]):
+    targets = None
 
     def __init__(
-        self, base: BaseStats, fixed_id: int, name: str, rarity: str,
+        self,
+        id: int,
+        template: TTemplate,
+        controller_id: PlayerId,
+        zone: CardZone = CardZone.INVALID,
+        creator_id: int | None = None,
+        creator_base_identity: tuple[str, int] | None = None,
+        base: BaseStats | None = None,
     ):
-        super().__init__()
+        super().__init__(id)
 
-        self.base = base
+        self.template = template
+        self.owner_id = controller_id
+        self.controller_id = controller_id
+        self._zone = zone
+        self.creator_id = creator_id
+        self.creator_base_identity = creator_base_identity
+        self._base = base
+
+        self.keywords = self.template.keywords
+        self.statuses = self.template.statuses.copy()
+
         self.buffs = CardBuffs()
-        self.meta = CardMetadata(fixed_id, name, rarity)
-        self.creator_id = None
-        self.owner_id = None
-        self.extra = {}
+        self.caught_card: CaughtCardData | None = None
 
-        self.loop = base.loop
+        self.game = None
 
-        self._cost = self.base.cost
-        self._zone = CardZone.INVALID
+        self._attrs_cache = {}
 
-    def __repr__(self):  # TODO
-        return str(self)
+    def _get_cached_attr(self, name: str) -> int:
+        revision = self.game.rules.revision
+        cached = self._attrs_cache.get(name)
+        if cached is not None and cached[0] == revision:
+            return cached[1]
 
-    def _set_zone(self, new_zone: CardZone):
+        get_value_func = getattr(self.game.rules, name)
+        value = get_value_func(self)
+
+        self._attrs_cache[name] = (revision, value)
+        return value
+
+    def _invalidate_rules(self) -> None:
+        self.game.rules.invalidate()
+
+    def _set_zone(self, new_zone: CardZone) -> None:
         if new_zone == self._zone:
             return
-
-        if self._zone == CardZone.BOARD and new_zone != CardZone.DUSTPILE:
-            self._reset()
 
         self._zone = new_zone
 
     @property
-    def cost(self):
-        return max(self._cost + self.buffs.cost, 0)
+    def base_identity(self) -> tuple[str, int]:
+        return 'card', self.template.id
 
     @property
-    def zone(self):
+    def type(self) -> CardType:
+        raise NotImplementedError
+
+    @property
+    def rarity(self) -> CardRarity:
+        return self.template.rarity
+
+    @property
+    def cost(self) -> int:
+        return self._get_cached_attr('cost')
+
+    @property
+    def base(self) -> BaseStats | TTemplate:
+        return self._base or self.template
+
+    @property
+    def is_generated(self) -> bool:
+        return self.creator_id is not None
+
+    @property
+    def zone(self) -> CardZone:
         return self._zone
 
     @zone.setter
     def zone(self, new_zone: CardZone):
         self._set_zone(new_zone)
 
-    def copy(self, *, exact: bool = False, zone: CardZone = CardZone.INVALID, assign_new_id: bool = False, **kwargs):
-        if exact:
-            new_card = copy.deepcopy(self)
-            if assign_new_id:
-                new_card.id = get_next_id()
+    @property
+    def controller(self) -> Entity:  # TODO add to other types of entities
+        return self.game.entity(self.controller_id)
 
-            return new_card
+    def add_keyword(self, keyword: CardKeyword) -> None:
+        self.keywords |= keyword
+        self._invalidate_rules()
 
-        return create_card(self.meta.fixed_id, zone=zone)
+    def has_keyword(self, keyword: CardKeyword) -> bool:
+        return keyword in self.keywords
 
-    def reset(self):
+    def remove_keyword(self, keyword: CardKeyword) -> None:
+        self.keywords &= ~keyword
+        self._invalidate_rules()
+
+    def set_status(self, status_id: CardStatusId, value: int) -> None:
+        if value == 0:
+            self.remove_status(status_id)
+        else:
+            self.statuses[status_id] = value
+            self._invalidate_rules()
+
+    def get_status(self, status_id: CardStatusId) -> int:
+        return self.statuses.get(status_id, 0)
+
+    def remove_status(self, status_id: CardStatusId) -> None:
+        self.statuses.pop(status_id, None)
+        self._invalidate_rules()
+
+    def set_base_stats(self, cost: int | None = None) -> None:
+        source = self._base or self.template
+        self._base = BaseStats(cost=source.cost if cost is None else cost)
+
+        self._invalidate_rules()
+
+    def reset(self) -> None:
         pass
 
-    def magic(self, game, target, caller):
-        pass
+    def get_exact_copy_attrs(self) -> dict:
+        return dict(
+            type=self.type,
+            template=self.template,
+            controller_id=self.controller_id,
+            keywords=self.keywords,
+            statuses=self.statuses.copy(),
+            buffs=CardBuffs(**self.buffs.serialize()),
+            caught_card=CaughtCardData(**self.caught_card.serialize()) if self.caught_card is not None else None,
+        )
 
-    def dust(self, game, killer, caller):
-        pass
+    def get_snapshot_attrs(self) -> dict:
+        return dict(
+            **self.get_exact_copy_attrs(),
+            id=self.id,
+            zone=self.zone,
+            creator_id=self.creator_id,
+            creator_base_identity=self.creator_base_identity,
+            cost=self.cost,
+        )
+
+    def to_snapshot(self) -> 'CardSnapshot':
+        raise NotImplementedError
+
+    def serialize(self) -> dict:
+        return {
+            'id': self.id,
+            'type': self.type.value,
+            'template_id': self.template.id,
+            'owner_id': self.owner_id,
+            'controller_id': self.controller_id,
+            'zone': self._zone,
+            'creator_id': self.creator_id,
+            'base': asdict(self._base) if self._base is not None else None,
+            'cost': self.cost,
+            'keywords': self.keywords,
+            'statuses': {status_id.value: value for status_id, value in self.statuses.items()},
+        }
+
+    magic = None
+    dust = None
+    delay = None
 
 
-class MonsterAttributes:
-    __slots__ = 'charge', 'haste', 'taunt', 'kr'
-
+class Monster(Card[MonsterTemplate]):
     def __init__(
-        self, charge: bool = False, haste: bool = False, taunt: bool = False,
+        self,
+        id: int,
+        template: MonsterTemplate,
+        controller_id: PlayerId,
+        zone: CardZone = CardZone.INVALID,
+        creator_id: int | None = None,
+        creator_base_identity: tuple[str, int] | None = None,
+        base: BaseStats | None = None,
     ):
-        self.charge = charge
-        self.haste = haste
-        self.taunt = taunt
+        super().__init__(id, template, controller_id, zone, creator_id, creator_base_identity, base)
 
-        self.kr = False
-
-
-class Monster(Card):
-    __slots__ = 'attributes', 'age', 'hp', 'pos', '_attack', '_max_hp', '_silenced', '_paralyzed_turns'
-
-    def __init__(
-        self, base: BaseStats, fixed_id: int, name: str, rarity: str,
-        charge: bool, haste: bool, taunt: bool,
-    ):
-        super().__init__(base, fixed_id, name, rarity)
-
-        self.attributes = MonsterAttributes(charge, haste, taunt)
         self.age = 0
-        self.hp = self.base.hp
         self.pos = None
+        self.has_attacked = False
+        self.hp_missing = 0
 
-        self._attack = self.base.attack
-        self._max_hp = self.base.hp
-        self._silenced = False
-        self._paralyzed_turns = 0
+        self.marked_for_destruction = False
 
     def __str__(self):
-        atk_style = 'atk-paralyzed' if self._paralyzed_turns > 0 else 'atk'
+        atk_style = 'atk-paralyzed' if self.get_status(CardStatusId.PARALYZED) else 'atk'
         hp_style = 'hp-low' if self.hp < self.max_hp else 'hp'
-        return f"[{self.id}] [g]{self.cost}[/g]/[{atk_style}]{self.attack}[/{atk_style}]/[{hp_style}]{self.hp}[/{hp_style}] [monster]{self.meta.name}[/monster]"
+        return f"[{self.id}] [g]{self.cost}[/g]/[{atk_style}]{self.attack}[/{atk_style}]/[{hp_style}]{self.hp}[/{hp_style}] [monster]{self.template.name}[/monster]"
 
-    def _reset(self):
+    def __repr__(self):
+        return f"Monster({self.id}, {self.template!r}, {self.controller_id}, {self.zone}, {self.creator_id}, {self.base!r})"
+
+    def _set_zone(self, new_zone: CardZone) -> None:
+        if new_zone == self._zone:
+            return
+
+        # When moving a monster from board to anywhere else, reset it's state.
+        if self._zone == CardZone.BOARD:
+            self._reset()
+
+        self._zone = new_zone
+
+    def _reset(self) -> None:
         self.silence()
         self.age = 0
         self.pos = None
-        self._silenced = False
-        # self.attributes = MonsterAttributes(...)  # TODO
+        self.keywords = self.template.keywords
+        self.statuses = self.template.statuses.copy()
 
-    def to_str(self):
-        atk_style = 'atk-paralyzed' if self._paralyzed_turns > 0 else 'atk'
+        self.has_attacked = False
+        self.hp_missing = 0
+
+    def to_str(self) -> str:
+        atk_style = 'atk-paralyzed' if self.get_status(CardStatusId.PARALYZED) else 'atk'
         hp_style = 'hp-low' if self.hp < self.max_hp else 'hp'
 
         extra_symbols = ''
-        if self.attributes.charge and self.age == 0:
+        if self.keywords & CardKeyword.CHARGE:
             extra_symbols += '[green]↟[/green]'
-        if self.attributes.haste and self.age == 0:
+        if self.keywords & CardKeyword.HASTE:
             extra_symbols += '[yellow]↑[/yellow]'
-        if self.attributes.taunt:
+        if self.keywords & CardKeyword.TAUNT:
             extra_symbols += '⛨'
 
-        return f"[{self.id}] [b]{self.meta.name}[/b] {extra_symbols}\n" \
+        return f"[{self.id}] [b]{self.template.name}[/b] {extra_symbols}\n" \
                f"[{atk_style}]{self.attack}[/{atk_style}]/[{hp_style}]{self.hp}[/{hp_style}]"
 
     @property
-    def attack(self):
-        return self._attack + self.buffs.attack
+    def type(self) -> CardType:
+        return CardType.MONSTER
 
     @property
-    def max_hp(self):
-        return self._max_hp + self.buffs.max_hp
+    def attack(self) -> int:
+        return self._get_cached_attr('attack')
 
     @property
-    def can_attack(self):
-        if self._paralyzed_turns > 0:
+    def max_hp(self) -> int:
+        return self._get_cached_attr('max_hp')
+
+    @property
+    def hp(self) -> int:
+        return self.max_hp - self.hp_missing
+
+    @property
+    def silenced(self) -> bool:
+        return self.has_keyword(CardKeyword.SILENCED)
+
+    @property
+    def can_attack(self) -> int:  # TODO deprecated?
+        if self.has_attacked:
             return 0
 
-        if self.attributes.haste:
-            return 1
+        if self.keywords & CardKeyword.DISARMED:
+            return 0
 
-        if self.attributes.charge or self.age > 0:
+        if self.get_status(CardStatusId.PARALYZED) > 0:
+            return 0
+
+        if (self.keywords & CardKeyword.CHARGE) or self.age > 0:
             return 2
+
+        if self.keywords & CardKeyword.HASTE:
+            return 1
 
         return 0
 
-    def receive_damage(self, damage: int, source = None):
-        self.hp -= damage
-
-    def heal(self, amount: int):
+    def heal(self, amount: int) -> int:
         old_hp = self.hp
-        self.hp = min(self.hp + amount, self.max_hp)
+        self.hp_missing = max(self.hp_missing - amount, 0)
 
+        self._invalidate_rules()
         return self.hp - old_hp
 
-    def buff(self, cost: int = 0, attack: int = 0, hp: int = 0):
+    def buff(self, cost: int = 0, attack: int = 0, hp: int = 0) -> None:
         self.buffs.cost += cost
         self.buffs.attack += attack
         self.buffs.max_hp += hp
 
-        if hp >= 0:
-            self.hp += hp
-        else:
-            self.hp = min(self.hp, self.max_hp)
+        self._invalidate_rules()
 
-    def silence(self):
-        self._silenced = True
-        self._paralyzed_turns = 0
+    def silence(self) -> bool:
+        if self.rarity == CardRarity.DETERMINATION:
+            return False
+
+        old_hp = self.hp
 
         self.buffs = CardBuffs()
-        self.attributes = MonsterAttributes()
-        self.hp = self.max_hp
+        self.keywords = CardKeyword.SILENCED
+        self.statuses = {
+            status_id: value
+            for status_id, value in self.statuses.items()
+            if status_id in (CardStatusId.LOOP,)
+        }
 
-    def paralyze(self):
-        self._paralyzed_turns = 2
+        # TODO check if needed
+        self._invalidate_rules()
 
-    def on_turn_start(self):
-        if self._paralyzed_turns > 0:
-            self._paralyzed_turns -= 1
+        new_hp = min(old_hp, self.max_hp)
+        self.hp_missing = max(self.max_hp - new_hp, 0)
+        if self.hp <= 0:
+            self.hp_missing -= 1 - self.hp
 
-    def on_turn_end(self):
+        self._invalidate_rules()
+        return True
+
+    def set_base_stats(self, cost: int | None = None, attack: int | None = None, hp: int | None = None) -> None:
+        source = self._base or self.template
+
+        self._base = BaseStats(
+            cost=source.cost if cost is None else cost,
+            attack=source.attack if attack is None else attack,
+            hp=source.hp if hp is None else hp,
+        )
+
+        self._invalidate_rules()
+
+    def on_turn_start(self) -> None:
         self.age += 1
-        self.attributes.charge = False
-        self.attributes.haste = False
+        self.has_attacked = False
+
+        paralyzed_turns = self.get_status(CardStatusId.PARALYZED)
+        if paralyzed_turns >= 1:
+            self.set_status(CardStatusId.PARALYZED, paralyzed_turns - 1)
+
+        self.remove_keyword(CardKeyword.TRANSPARENCY)
+
+    def on_turn_end(self) -> None:
+        self.remove_keyword(CardKeyword.CHARGE)
+        self.remove_keyword(CardKeyword.HASTE)
+
+        if self.keywords & CardKeyword.CANDY:
+            self.heal(3)
+
+    def get_exact_copy_attrs(self) -> dict:
+        return dict(
+            **super().get_exact_copy_attrs(),
+            age=self.age,
+            has_attacked=self.has_attacked,
+            hp_missing=self.hp_missing,
+        )
+
+    def get_snapshot_attrs(self) -> dict:
+        return dict(
+            **super().get_snapshot_attrs(),
+            pos=self.pos,
+            attack=self.attack,
+            hp=self.hp,
+            max_hp=self.max_hp,
+        )
+
+    def to_snapshot(self) -> 'MonsterSnapshot':
+        return MonsterSnapshot(**self.get_snapshot_attrs())
+
+    def serialize(self) -> dict:
+        return {
+            **super().serialize(),
+            'attack': self.attack,
+            'hp': self.hp,
+            'max_hp': self.max_hp,
+        }
 
 
-class Spell(Card):
+class Spell(Card[CardTemplate]):
     def __str__(self):
-        return f"[{self.id}] [g]{self.cost}G[/g] [spell]{self.meta.name}[/spell]"
+        return f"[{self.id}] [g]{self.cost}G[/g] [spell]{self.template.name}[/spell]"
+
+    def __repr__(self):
+        return f"Spell({self.id}, {self.template!r}, {self.controller_id}, {self.zone}, {self.creator_id}, {self.base!r})"
+
+    @property
+    def type(self) -> CardType:
+        return CardType.SPELL
+
+    def buff(self, cost: int = 0) -> None:
+        self.buffs.cost += cost
+        self._invalidate_rules()
+
+    def to_snapshot(self) -> 'SpellSnapshot':
+        return SpellSnapshot(**self.get_snapshot_attrs())
 
 
 CARDS = {}
 
 
 def create_card(
-    card_id: int,
+    id: int,
+    template_id: int,
+    controller_id: PlayerId,
     zone: CardZone = CardZone.INVALID,
     creator_id: int | None = None,
-    owner_id: int | None = None,
-):
-    card_data = CARDS[card_id]
-    if card_data['fixedId'] in cards:
-        class_ = cards[card_data['fixedId']]
+    creator_base_identity: tuple[str, int] | None = None,
+    base_attack: int | None = None,
+    base_hp: int | None = None,
+) -> Card:
+    template = LIBRARY.get(template_id)
+    if template_id in cards:
+        class_ = cards[template_id]
     else:
-        class_ = (Monster, Spell)[card_data['typeCard']]
+        class_ = (Monster, Spell)[template.type.value]
 
-    if card_data['typeCard'] == 0:
-        card_ = class_(
-            base=BaseStats(
-                cost=card_data['cost'],
-                attack=card_data['attack'],
-                hp=card_data['hp'],
-                loop=card_data['loop'],
-            ),
-            fixed_id=card_data['fixedId'],
-            name=card_data['name'],
-            rarity=card_data['rarity'],
-            charge=card_data['charge'],
-            haste=card_data['haste'],
-            taunt=card_data['taunt'],
+    if template.type == CardType.MONSTER and ((base_attack is not None) or (base_hp is not None)):
+        base = BaseStats(
+            cost=template.cost,
+            attack=base_attack if base_attack is not None else template.attack,
+            hp=base_hp if base_hp is not None else template.hp,
         )
-
-    elif card_data['typeCard'] == 1:
-        card_ = class_(
-            base=BaseStats(cost=card_data['cost'], loop=card_data['loop']),
-            fixed_id=card_data['fixedId'],
-            name=card_data['name'],
-            rarity=card_data['rarity'],
-        )
-
     else:
-        raise ValueError('Invalid card type')
+        base = None
 
-    card_.zone = zone
-    if creator_id:
-        card_.creator_id = creator_id
+    if zone not in (CardZone.INVALID, CardZone.DECK):
+        raise ValueError("This argument should only be used for deck creation. Use `Game.move_card()` instead.")
 
-    if owner_id:
-        card_.owner_id = owner_id
+    card_ = class_(
+        id=id,
+        template=template,
+        controller_id=controller_id,
+        zone=zone,
+        creator_id=creator_id,
+        creator_base_identity=creator_base_identity,
+        base=base,
+    )
 
     return card_
 
 
 def load():
+    # TODO move
     import cards.base
     import cards.tokens
+    import cards.patience
+
+    try:
+        LIBRARY.get(1)
+    except KeyError:
+        pass
+    else:
+        raise RuntimeError("Library is already loaded.")
 
     with open('cards.json') as f:
-        for card_data in json.load(f):
-            CARDS[card_data['fixedId']] = card_data
+        LIBRARY.load_templates(json.load(f))

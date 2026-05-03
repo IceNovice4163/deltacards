@@ -1,0 +1,77 @@
+from enum import Enum, IntEnum, IntFlag
+
+
+class PlayerId(IntEnum):
+    P1 = 1
+    P2 = 2
+
+    def opponent(self) -> 'PlayerId':
+        return PlayerId.P2 if self is PlayerId.P1 else PlayerId.P1
+
+
+class CardType(Enum):
+    MONSTER = 0
+    SPELL = 1
+
+
+class CardZone(Enum):
+    INVALID = 'invalid'
+    STACK = 'stack'
+    BOARD = 'board'
+    HAND = 'hand'
+    DECK = 'deck'
+    DUSTPILE = 'dustpile'
+    ERASED = 'erased'
+
+
+class CardKeyword(IntFlag):
+    NONE = 0
+    CHARGE = 1 << 0
+    HASTE = 1 << 1
+    TAUNT = 1 << 2
+    KR = 1 << 3
+    CANDY = 1 << 4
+    ARMOR = 1 << 5
+    TRANSPARENCY = 1 << 6
+    DISARMED = 1 << 7
+    INVULNERABLE = 1 << 8
+    SILENCED = 1 << 9
+    WANTED = 1 << 10
+    DARKSPAWN = 1 << 11
+
+
+class CardStatusId(Enum):
+    PARALYZED = 'paralyzed'
+    DODGE = 'dodge'
+    LOOP = 'loop'
+
+
+class CardRarity(IntEnum):
+    BASE = 0
+    COMMON = 1
+    RARE = 2
+    EPIC = 3
+    LEGENDARY = 4
+    DETERMINATION = 5
+    TOKEN = 100
+
+
+class Ability(Enum):
+    MAGIC = 'magic'
+    SYNERGY = 'synergy'
+    DUST = 'dust'
+    DELAY = 'delay'
+    TURN_START = 'turn_start'
+    TURN_END = 'turn_end'
+    SHOCK = 'shock'
+    SUPPORT = 'support'
+    TURBO = 'turbo'
+    BULLSEYE = 'bullseye'
+
+
+class DamageKind(Enum):
+    COMBAT = 'combat'
+    SPELL = 'spell'
+    ABILITY = 'ability'
+    FATIGUE = 'fatigue'
+    OTHER = 'other'

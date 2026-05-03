@@ -1,13 +1,11 @@
-import random
-
-from cards import CardZone, Card, Monster, create_card
+from cards import Card, Monster
 
 
 class CardContainer:
     __slots__ = '_cards',
 
-    def __init__(self, card_ids: list[int]):
-        self._cards: list[Card] = [create_card(fixed_id) for fixed_id in card_ids]
+    def __init__(self):
+        self._cards: list[Card] = []
 
     def __str__(self):
         return ", ".join(str(card) for card in self.cards)
@@ -16,14 +14,17 @@ class CardContainer:
         return len(self.cards)
 
     @property
-    def cards(self):
+    def cards(self) -> list[Card]:
         return self._cards
 
+    def copy(self) -> list[Card]:
+        return self._cards.copy()
+
     def add(self, card: Card, pos: int | None = None) -> None:
-        if pos is not None:
-            self.cards.insert(pos, card)
-        else:
-            self.cards.append(card)
+        if pos is None:
+            pos = len(self.cards)
+
+        self.cards.insert(pos, card)
 
     def get(self, card_id: int) -> Card:
         try:
@@ -34,7 +35,10 @@ class CardContainer:
     def get_card_index(self, card: Card) -> int:
         return self.cards.index(card)
 
-    def pop(self, card_id: int) -> Card:
+    def pop(self, index: int = 0) -> Card:
+        return self.cards.pop(index)
+
+    def remove(self, card_id: int) -> Card:
         card = self.get(card_id)
         self.cards.remove(card)
 
@@ -43,35 +47,29 @@ class CardContainer:
     def clear(self) -> None:
         self.cards.clear()
 
+    def put(self, card_id: int, pos: int) -> None:
+        index, card = next((index, c) for index, c in enumerate(self.cards) if c.id == card_id)
+
+        del self.cards[index]
+        self.cards.insert(pos, card)
+
 
 class Deck(CardContainer):
-    __slots__ = ()
+    def __init__(self, cards: list[Card]):
+        if len(cards) != 25:
+            raise ValueError(f"Invalid deck size: {len(cards)}")
 
-    def __init__(self, card_ids: list[int], shuffle: bool = False):
-        if len(card_ids) != 25:
-            raise ValueError(f"Invalid deck size: {len(card_ids)}")
+        super().__init__()
 
-        if shuffle:
-            random.shuffle(card_ids)
-
-        self._cards: list[Card] = [create_card(fixed_id, zone=CardZone.DECK) for fixed_id in card_ids]
+        self._cards = cards.copy()
 
 
 class Board(CardContainer):
     __slots__ = ()
     MAX_CARDS = 4
 
-    def __init__(self, card_ids: list[int | None] = None):
-        if card_ids is None:
-            card_ids = [None, None, None, None]
-
-        if len(card_ids) != self.MAX_CARDS:
-            raise ValueError(f"Invalid board size: {len(card_ids)}")
-
-        self._cards: list[Monster] = [
-            create_card(fixed_id, zone=CardZone.BOARD)
-            if fixed_id else None for fixed_id in card_ids
-        ]
+    def __init__(self):
+        self._cards: list[Monster | None] = [None] * 4
 
     def __getitem__(self, key):
         return self._cards[key]
@@ -83,7 +81,7 @@ class Board(CardContainer):
         return sum(1 for monster in self._cards if monster)
 
     @property
-    def cards(self):
+    def cards(self) -> list[Monster]:
         return [monster for monster in self._cards if monster]
 
     def add(self, card: Monster, pos: int | None = None) -> int:
@@ -101,9 +99,12 @@ class Board(CardContainer):
         return pos
 
     def get(self, card_id: int) -> Monster:
-        return next(card for card in self.cards if card and card.id == card_id)
+        return next(card for card in self._cards if card and card.id == card_id)
 
-    def pop(self, card_id: int) -> Monster:
+    def get_empty_slot_index(self) -> int:
+        return next(index for index, card in enumerate(self._cards) if card is None)
+
+    def remove(self, card_id: int) -> Monster:
         card = self.get(card_id)
         index = self._cards.index(card)
         self._cards[index] = None

@@ -1,134 +1,63 @@
-from typing import TYPE_CHECKING
+from typing import Any, Sequence, TYPE_CHECKING
 
-from actions import *
-from artifacts import Artifact
-from cards import Card, Monster, Spell, TargetsEnum, CardZone
 from constants import GOLD_GAINS
-from containers import CardContainer, Deck, Board
+from containers import Board, CardContainer, Deck
 from entity import Entity
-from targeting import SELF
+from enums import PlayerId
+from snapshots import PlayerSnapshot
 
 if TYPE_CHECKING:
-    from ai import AI
-    from main import Game
+    from artifacts import Artifact
+    from game import Game
+    from souls import Soul
 
 
 class Player(Entity):
-    def __init__(self, player_id: int, deck: Deck, artifacts: list[Artifact], is_first_turn: bool, ai: 'Type[AI] | None' = None):
+    def __init__(
+        self,
+        player_id: PlayerId,
+        deck: Sequence[int],
+        soul_id: str,
+        artifact_ids: Sequence[int],
+        is_first_turn: bool,
+    ):
         self.id = player_id
-        self.deck = deck
-        self.artifacts = artifacts
-        self.is_first_turn = is_first_turn
-        self.ai = ai() if ai else None
 
-        self.hand = CardContainer([])
+        self.starting_deck_card_ids = deck
+        self.starting_soul_id = soul_id.lower()
+        self.starting_artifact_ids = artifact_ids
+        self.is_first_turn = is_first_turn
+
+        self.soul: 'Soul' = None
+        self.artifacts: list['Artifact'] = None
+
         self.board = Board()
-        self.dustpile = CardContainer([])
-        self.gold = 1
+        self.hand = CardContainer()
+        self.deck: Deck = None
+        self.dustpile = CardContainer()
+        self.erased = CardContainer()
+
+        self.turn = 0
+        self.gold = 10
         self.hp = 30
         self.max_hp = 30
         self.fatigue_counter = 0
 
-        self.verbose = True
-        self.game: Game | None = None
-        self.opponent: Player | None = None
+        self.game: 'Game' = None
+        self.opponent: 'Player' = None
 
     def __str__(self):
         return f"Player {self.id}"
 
     @property
-    def owner_id(self):
+    def controller_id(self) -> PlayerId:
         return self.id
 
-    def copy(self, **kwargs):  # TODO
-        return Player(self.id, self.deck, self.artifacts, is_first_turn=self.is_first_turn)
-
-    def debug(self, msg: str) -> None:
-        if self.verbose:
-            tag = 'hp' if self.is_first_turn else 'atk'
-            self.game.print(f"[{tag}][P{int(not self.is_first_turn) + 1}][/{tag}] {msg}")
-
-    def print_state(self) -> None:
-        self.game.print(f"[g]{self.gold}G[/g], {len(self.deck)} cards")
-
-    def get_gold_spent(self, turn: int, spells_only: bool = False):
-        return sum(
-            -res.action.gold_change for res in self.game.log
-            if res.turn == turn and res.player_id == self.id
-                and isinstance(res.action, AffectsGold) and res.action.gold_change < 0
-                and ((not spells_only) or isinstance(res.source, Spell))
-        )
-
-    def increase_gold(self, turn: int):
+    def increase_gold(self, turn: int) -> None:
         try:
             self.gold += GOLD_GAINS[int(not self.is_first_turn)][turn - 1]
         except IndexError:
             self.gold += 10
-
-    def draw(self, card_id: int) -> Card:
-        card = self.deck.pop(card_id)
-
-        if len(self.hand) < 7:
-            card.zone = CardZone.HAND
-            self.hand.add(card)
-
-        else:
-            card.zone = CardZone.BURNED
-            self.debug(f"Discard {card} (overdraw)")
-
-        return card
-
-    def draw_next(self, count: int = 1) -> None:
-        for _ in range(count):
-            if len(self.deck) > 0:
-                card = self.deck.cards[0]
-                self.game.handle_actions(Draw(card=card), target=self, caller=self)
-
-            else:
-                self.fatigue_counter += 1
-                self.debug(f"Fatigue! {self.fatigue_counter} damage")
-                # TODO: use extra_actions
-                self.game.handle_actions(Hit(damage=self.fatigue_counter), target=self, caller=self)
-
-    def get_target_choices(self, card: Card) -> list['Player | Card']:
-        targets = []
-
-        for target_type in card.targets:
-            if target_type == TargetsEnum.YOU:
-                targets.append(self)
-            elif target_type == TargetsEnum.OPPONENT:
-                targets.append(self.opponent)
-            elif target_type == TargetsEnum.ALLY_MONSTER:
-                targets += self.board.cards
-            elif target_type == TargetsEnum.ENEMY_MONSTER:
-                targets += self.opponent.board.cards
-            elif target_type == TargetsEnum.HAND:
-                targets += [c for c in self.hand.cards if c.id != card.id]
-            elif target_type == TargetsEnum.DECK:
-                targets += self.deck.cards
-
-        return targets
-
-    def play_card(self, card_id: int, pos: int | None = None, target = None):
-        card = self.hand.get(card_id)
-        if card.cost > self.gold:
-            raise RuntimeError("Not enough [g]G[/g] to play card")
-
-        self.hand.pop(card_id)
-        self.gold -= card.cost
-        if self.verbose:
-            if target:
-                self.debug(f"Target: {target}")
-
-        card.owner_id = self.id
-
-        self.game.handle_actions(Play(pos=pos), target=card, caller=self)
-        self.game.handle_actions(card.magic, target=target, caller=card)
-
-    def receive_damage(self, damage: int):
-        self.hp -= damage
-        if self.verbose:
-            self.debug(f"HP left: {self.hp}")
 
     def heal(self, amount: int) -> int:
         old_hp = self.hp
@@ -136,95 +65,29 @@ class Player(Entity):
 
         return self.hp - old_hp
 
-    def buff(self, hp: int = 0):
+    def set_max_hp(self, hp: int) -> None:
+        self.max_hp = hp
+        if self.hp > self.max_hp:
+            self.hp = self.max_hp
+
+    def buff(self, hp: int = 0) -> None:
         self.hp += hp
         self.max_hp += hp
 
-    def on_game_start(self) -> None:
-        for artifact in self.artifacts:
-            self.game.handle_actions(artifact.game_start, caller=artifact, owner=self)
+    def get_snapshot_attrs(self) -> dict:
+        return dict(
+            id=self.id,
+            gold=self.gold,
+            hp=self.hp,
+            max_hp=self.max_hp,
+        )
 
-    def on_turn_start(self, turn: int) -> None:
-        self.increase_gold(turn)
-        if self.verbose:
-            self.debug(f"Turn start, [g]{self.gold}G[/g]")
-            self.debug(f"Hand: {self.hand}")
+    def to_snapshot(self) -> 'PlayerSnapshot':
+        return PlayerSnapshot(**self.get_snapshot_attrs())
 
-        self.game.handle_actions(DrawNext(target=SELF), caller=self)
-
-        for monster in self.board.cards:
-            monster.on_turn_start()
-
-            if hasattr(monster, 'turn_start'):
-                self.game.handle_actions(monster.turn_start, caller=monster)
-
-        for artifact in self.artifacts:
-            self.game.handle_actions(artifact.turn_start, caller=artifact, owner=self)
-
-    def on_turn_end(self, turn: int) -> None:
-        self.debug("Turn end")
-        for monster in self.board.cards:
-            monster.on_turn_end()
-
-            if hasattr(monster, 'turn_end'):
-                self.game.handle_actions(monster.turn_end, caller=monster)
-
-        for artifact in self.artifacts:
-            self.game.handle_actions(artifact.turn_end, caller=artifact, owner=self)
-
-    def handle_turn(self) -> None:
-        if self.ai:
-            self.ai.handle_turn(self)
-
-
-class ConsolePlayer(Player):
-    def handle_command(self, text: str) -> None:
-        sp = text.split()
-        action, args = sp[0], sp[1:]
-
-        if action in ('s', 'state'):
-            self.print_state()
-
-        elif action in ('b', 'board'):
-            self.game.print_board()
-
-        elif action in ('p', 'play'):
-            card_id = int(args[0])
-            try:
-                card = self.hand.get(card_id)
-            except StopIteration:
-                self.game.print("Card not found")
-                return
-
-            if card.targets:
-                choices = self.get_target_choices(card)
-                if choices:
-                    self.game.print(
-                        f"{card}: select a target:\n" +
-                        "\n".join(f"{i + 1}) {choice}" for i, choice in enumerate(choices)) +
-                        "\n0) Cancel",
-                    )
-                    index = int(input()) - 1
-                    if index == -1:
-                        return
-
-                    target = choices[index]
-
-                else:
-                    target = None
-
-                self.play_card(card.id, target=target)
-
-            else:
-                self.play_card(card.id)
-
-        if action in ('a', 'atk', 'attack'):
-            self.game.attack(int(args[0]), int(args[1]))
-
-    def handle_turn(self) -> None:
-        while True:
-            text = input()
-            if not text:
-                break
-
-            self.handle_command(text)
+    def serialize(self) -> dict[str, Any]:  # TODO
+        return {
+            'id': self.id,
+            'hp': self.hp,
+            'max_hp': self.max_hp,
+        }

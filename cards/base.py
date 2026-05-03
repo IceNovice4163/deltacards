@@ -1,30 +1,24 @@
-from typing import TYPE_CHECKING
-
 from actions import *
-from conditions import *
-from cards import TargetsEnum, Monster, Spell, card, create_card
+from cards import Monster, Spell, card
+from effects import Check
+from enums import CardZone
 from targeting import *
-
-if TYPE_CHECKING:
-    from ..player import Player
-    from ..game import Game
+from targeting.predicates import SPENT_GOLD_LAST_TURN
 
 
 @card(3)
 class Whimsun(Monster):
-    def magic(self, game: 'Game', **kwargs):
-        player = game.players[self.owner_id]
-        return Buff(target=SELF, attack=len(player.board) - 1)
+    magic = Buff(target=SELF, attack=COUNT(ALLY_MONSTERS & ~SELF))
 
 
 @card(5)
 class Migosp(Monster):
-    magic = Buff(target=ADJACENT(SELF), hp=1)
+    magic = Buff(target=ADJACENT(SELF), hp=+1)
 
 
 @card(6)
 class Vegetoid(Monster):
-    turn_start = Heal(target=OWNER, amount=5)
+    turn_start = Heal(target=CONTROLLER, amount=5)
 
 
 @card(10)
@@ -34,8 +28,8 @@ class Ice(Monster):
 
 @card(11)
 class Snowdrake(Monster):
-    targets = TargetsEnum.ALLY_MONSTER,
-    magic = Buff(target=TARGET, attack=2)
+    targets = ALLY_MONSTERS
+    magic = Buff(target=TARGET, attack=+2)
 
 
 @card(13)
@@ -45,31 +39,31 @@ class Woshua(Monster):
 
 @card(16)
 class Madjick(Monster):
-    targets = TargetsEnum.ALLY_MONSTER, TargetsEnum.ENEMY_MONSTER
-    magic = SwapStats(TARGET)
+    targets = ALLY_MONSTERS | ENEMY_MONSTERS
+    magic = SwapStats(target=TARGET)
 
 
 @card(20)
 class Vulkin(Monster):
-    targets = TargetsEnum.YOU, TargetsEnum.OPPONENT, TargetsEnum.ALLY_MONSTER, TargetsEnum.ENEMY_MONSTER
+    targets = YOU | OPPONENT | ALLY_MONSTERS | ENEMY_MONSTERS
     magic = Hit(target=TARGET, damage=2)
 
 
 @card(22)
 class Shyren(Monster):
-    targets = TargetsEnum.YOU, TargetsEnum.OPPONENT, TargetsEnum.ALLY_MONSTER, TargetsEnum.ENEMY_MONSTER
+    targets = YOU | OPPONENT | ALLY_MONSTERS | ENEMY_MONSTERS
     magic = Heal(target=TARGET, amount=4)
 
 
 @card(44)
 class Gyftrot(Monster):
-    magic = DrawNext(target=OWNER)
+    magic = DrawNext(player=CONTROLLER)
 
 
 @card(144)
 class ScarfMouse(Monster):
-    targets = TargetsEnum.ENEMY_MONSTER,
-    magic = Silence(TARGET)
+    targets = ENEMY_MONSTERS
+    magic = Silence(target=TARGET)
 
 
 @card(147)
@@ -79,61 +73,57 @@ class FukuFire(Monster):
 
 @card(176)
 class UglyFish(Monster):
-    targets = TargetsEnum.ENEMY_MONSTER,
-    magic = Send(target=TARGET, to='owner_hand')
+    targets = ENEMY_MONSTERS
+    magic = Move(target=TARGET, zone=CardZone.HAND)
 
 
 @card(225)
 class FishingRod(Monster):
-    turn_end = DrawNext(target=OWNER)
+    turn_end = DrawNext(player=CONTROLLER)
 
 
 @card(235)
 class DadSlime(Monster):
-    def dust(self, game: 'Game', **kwargs):
-        return [
-            Summon(target=create_card(370, creator_id=self.meta.fixed_id, owner_id=self.owner_id))
-            for _ in range(2)
-        ]
+    dust = Summon(card=CARD_BY_NAME("KidSlime") >> GENERATE(), controller=YOU) * 2
 
 
 @card(72)
 class Melt(Spell):
-    targets = TargetsEnum.ALLY_MONSTER,
+    targets = ALLY_MONSTERS
     magic = Hit(target=FRONT(TARGET), damage=TARGET.hp)
 
 
 @card(76)
 class Strength(Spell):
-    magic = Buff(target=RANDOM(ALLY_MONSTERS, n=2), attack=1, hp=1)
+    magic = Buff(target=ALLY_MONSTERS >> RANDOM(n=2), attack=+1, hp=+1)
 
 
 @card(83)
 class Shopping(Spell):
-    magic = Draw(target=OWNER, card=SearchCard(DECK(), TARGET.cost <= 5)) * 3
+    magic = Draw(player=YOU, card=(DECK & (COST <= 5)).first()) * 3
 
 
 @card(86)
 class Worsening(Spell):
-    magic = HalveStats(target=ENEMY_MONSTERS & ATTRIBUTE('kr'), round_up=False)
+    magic = HalveStats(target=ENEMY_MONSTERS & HAS_KEYWORD(KR), round_up=False)
 
 
 @card(96)
 class Punishment(Spell):
-    targets = TargetsEnum.ENEMY_MONSTER,
-
-    def magic(self, game: 'Game', **kwargs):
-        damage = 4 if game.check(SpentGoldLastTurn(OWNER)) else 3
-        return Hit(target=TARGET, damage=damage)
+    targets = ENEMY_MONSTERS
+    magic = Check(YOU & SPENT_GOLD_LAST_TURN).to(
+        Hit(target=TARGET, damage=4),
+        else_=Hit(target=TARGET, damage=3)
+    )
 
 
 @card(129)
 class Knife(Spell):
-    targets = TargetsEnum.ENEMY_MONSTER,
-    magic = Kill(target=TARGET), Hit(target=OWNER, damage=TARGET.cost)
+    targets = ENEMY_MONSTERS
+    magic = Kill(target=TARGET).to(Hit(target=CONTROLLER, damage=TARGET.cost))
 
 
 @card(132)
 class Pie(Spell):
-    targets = TargetsEnum.ALLY_MONSTER, TargetsEnum.ENEMY_MONSTER
+    targets = ALLY_MONSTERS | ENEMY_MONSTERS
     magic = Heal(target=TARGET, amount=TARGET.max_hp)
