@@ -1,14 +1,11 @@
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from actions import *
 from artifacts import Save
 from entity import Entity, on_event
 from enums import CardKeyword, CardZone, PlayerId
+from player import Player
 from targeting import *
-
-if TYPE_CHECKING:
-    from actions import ActionContext
-    from player import Player
 
 SOULS = {}
 
@@ -75,13 +72,12 @@ class Determination(Soul):
     def game_start(self, ctx: 'ActionContext'):
         controller = self._get_controller(ctx)
         controller.next_lost_soul = 0
-        return AddArtifact(target=CONTROLLER, artifact=Save(owner_id=self.controller_id.id))
+        return AddArtifact(target=CONTROLLER, artifact=Save(controller_id=self.controller_id))
 
-    @on_event(Kill, pre=True)
-    def on_kill(self, action: Kill, ctx: ActionContext):
-        if self.extra_life and isinstance(action.target, Player) and action.target.id == self.owner_id:
+    def on_would_die(self, entity: Entity, **kwargs):
+        if entity.id == self.controller_id and self.extra_life:
             self.extra_life = False
-            return SetPlayerHP(target=CONTROLLER, hp=5), True
+            return SetPlayerHP(player=entity, hp=5)
 
         return None
 

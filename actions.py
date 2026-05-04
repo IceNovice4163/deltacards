@@ -127,8 +127,17 @@ class Heal(Action):
 class Kill(Action):
     target: Arg['Monster | Player'] = Arg(many=True)
     killer: Arg['Entity'] = Arg(default=SELF)
+    skip_check_death_prevented: Arg[bool] = Arg(default=False)
 
-    def execute(self, target: 'Monster | Player', killer: 'Entity', *, ctx: ActionContext, **kwargs):
+    def execute(self, target: 'Monster | Player', killer: 'Entity', skip_check_death_prevented: bool, *, ctx: ActionContext, **kwargs):
+        if not skip_check_death_prevented:
+            death_prevented, extra_actions = ctx.game.check_death_prevented(target, killer)
+            if death_prevented:
+                return ActionOutcome(
+                    success=False,
+                    action_calls=extra_actions,
+                )
+
         action_calls = []
         results = []
 
@@ -269,6 +278,9 @@ class Overdraw(Action):
     card: Arg['Card'] = Arg(many=True)
 
     def execute(self, player: 'Player', card: 'Card', *, ctx: ActionContext, **kwargs):
+        if ctx.game.check_overdraw_prevented(player):
+            return ActionOutcome(success=False)
+
         ctx.game.move_card(card, controller_id=player.id, zone=CardZone.ERASED)
         return ActionOutcome(
             success=True,
@@ -341,7 +353,7 @@ class SetPlayerHP(Action):
     hp: Arg[int] = Arg()
 
     def execute(self, player: 'Player', hp: int, *, ctx: ActionContext, **kwargs):
-        player.set_max_hp(hp)
+        player.set_hp(hp)
         return ActionOutcome(success=True, affected=[player])
 
 
@@ -894,7 +906,7 @@ class UpdateArtifactCounter(Action):
     artifact: Arg['Artifact'] = Arg()
     delta: Arg[int] = Arg()
 
-    def execute(self, player: 'Player', artifact: 'Artifact', delta: int, *, ctx: ActionContext, **kwargs):
+    def execute(self, artifact: 'Artifact', delta: int, *, ctx: ActionContext, **kwargs):
         artifact.counter = max(artifact.counter + delta, 0)
         return ActionOutcome(success=True, affected=[artifact])
 

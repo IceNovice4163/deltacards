@@ -36,6 +36,7 @@ class Artifact(Entity):
 
     name: str
     rarity: ArtifactRarity
+    initial_counter: int = 0
 
     def __init__(self, id: int, controller_id: PlayerId):
         super().__init__(id)
@@ -43,7 +44,7 @@ class Artifact(Entity):
         self.owner_id = controller_id
         self.controller_id = controller_id
 
-        self.counter = 0
+        self.counter = self.initial_counter
         self.active = True
 
     def __str__(self):
@@ -111,7 +112,7 @@ class Solidity(Artifact):
 
     @on_event(Kill)
     def on_kill(self, ctx: 'ActionContext', target: 'Monster | Player', **kwargs):
-        if isinstance(target, Monster) and target.owner_id == self.owner_id and target.has_keyword(CardKeyword.TAUNT):
+        if isinstance(target, Monster) and target.controller_id == self.controller_id and target.has_keyword(CardKeyword.TAUNT):
             return Move(target=CARD_BY_NAME("Shield") >> GENERATE(), zone=CardZone.DECK, pos='top')
 
         return None
@@ -121,11 +122,11 @@ class Solidity(Artifact):
 class Preservation(Artifact):
     name = "Preservation"
     rarity = ArtifactRarity.COMMON
+    initial_counter = 7
 
-    def on_overdraw_would_happen(self) -> bool:
-        if self.counter >= 1:
-            self.counter -= 1
-            return True
+    def on_would_overdraw(self, player: 'Player', **kwargs):
+        if player.id == self.controller_id and self.counter >= 1:
+            return UpdateArtifactCounter(artifact=self, delta=-1)
 
         return False
 
@@ -138,7 +139,7 @@ class Save(Artifact):
     def turn_end(self, ctx: 'ActionContext'):
         controller = self._get_controller(ctx)
         if self.counter >= 8:
-            yield UpdateArtifactCounter(target=ctx.game.players[self.owner_id], artifact=SELF, delta=-8)
+            yield UpdateArtifactCounter(artifact=self, delta=-8)
 
             if len(controller.board) < controller.board.MAX_CARDS:
                 yield Summon(target=CONTROLLER, card=NEXT_LOST_SOUL, attack=1, hp=1)
@@ -148,6 +149,6 @@ class Save(Artifact):
     @on_event(Kill)
     def on_kill(self, ctx: 'ActionContext', target: 'Monster | Player', **kwargs):
         if isinstance(target, Monster):
-            return UpdateArtifactCounter(target=ctx.game.players[self.owner_id], artifact=SELF, delta=1)
+            return UpdateArtifactCounter(artifact=self, delta=1)
 
         return None

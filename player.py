@@ -65,6 +65,11 @@ class Player(Entity):
 
         return self.hp - old_hp
 
+    def set_hp(self, hp: int) -> None:
+        self.hp = hp
+        if self.hp > self.max_hp:
+            self.max_hp = hp
+
     def set_max_hp(self, hp: int) -> None:
         self.max_hp = hp
         if self.hp > self.max_hp:

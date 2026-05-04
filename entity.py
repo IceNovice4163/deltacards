@@ -7,6 +7,7 @@ from modifiers import IntModifier
 
 if TYPE_CHECKING:
     from actions import Action
+    from action_results import ActionResult
     from game import Game
 
 
@@ -73,7 +74,7 @@ class Entity(ABC, metaclass=EntityMeta):
     turn_end = None
 
 
-def on_event(action: Type['Action'], pre: bool = False):
+def on_event(action: Type['Action' | 'ActionResult'], pre: bool = False):
     class OnEvent:
         def __init__(self, function):
             self.function = function

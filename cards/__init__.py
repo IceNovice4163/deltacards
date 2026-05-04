@@ -185,7 +185,7 @@ class Card(Entity, Generic[TTemplate]):
 
         self._invalidate_rules()
 
-    def reset(self) -> None:
+    def _reset(self) -> None:
         pass
 
     def get_exact_copy_attrs(self) -> dict:
@@ -279,6 +279,7 @@ class Monster(Card[MonsterTemplate]):
 
         self.has_attacked = False
         self.hp_missing = 0
+        self.marked_for_destruction = False
 
     def to_str(self) -> str:
         atk_style = 'atk-paralyzed' if self.get_status(CardStatusId.PARALYZED) else 'atk'

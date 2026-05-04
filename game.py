@@ -441,13 +441,15 @@ class Game:
             if player.artifacts:
                 yield from player.artifacts
 
-    def _collect_event_handlers(self, pre: bool, action: Action) -> list[tuple[Entity, Action]]:
+    def _collect_event_handlers(self, pre: bool, action: Action, resolved_args: dict[str, Any]) -> list[tuple[Entity, Action]]:
         actions = []
         for entity in self._iter_event_sources():
             event_handlers = entity.pre_event_handlers if pre else entity.post_event_handlers
             for action_class, event_handler in event_handlers.items():
                 if isinstance(action, action_class):
-                    actions.append((entity, event_handler(entity)))
+                    actions_to_append = event_handler(entity, action, resolved_args)
+                    if actions_to_append is not None:
+                        actions.append((entity, actions_to_append))
 
         return actions
 
@@ -820,9 +822,18 @@ class Game:
         if self._maybe_expand_many_arg(pending, ctx=ctx):
             return []
 
+        # Resolve args for `action.execute()`.
+        # Expand selectors, variables and other expressions into concrete values.
+        try:
+            resolved_args = action.resolve(ctx, **pending.kwargs)
+        except NoTargetsError:
+            # If there are no targets, fizzle this action.
+            self._finish_step_action(pending, success=False, results=())
+            return []
+
         # Run handlers that should run right before the atomic action resolves (e.g. "before this attacks, do ...").
         if not pending.pre_handlers_done:
-            pre_handlers = self._collect_event_handlers(pre=True, action=action)
+            pre_handlers = self._collect_event_handlers(pre=True, action=action, resolved_args=resolved_args)
             if pre_handlers:
                 # Requeue the original action.
                 self.resolution_stack.append(
@@ -850,15 +861,6 @@ class Game:
 
                 return []
 
-        # Resolve args for `action.execute()`.
-        # Expand selectors, variables and other expressions into concrete values.
-        try:
-            resolved_args = action.resolve(ctx, **pending.kwargs)
-        except NoTargetsError:
-            # If there are no targets, fizzle this action.
-            self._finish_step_action(pending, success=False, results=())
-            return []
-
         # Execute the atomic action
         res = action.execute(ctx=ctx, **resolved_args)
         if not isinstance(res, ActionOutcome):
@@ -877,10 +879,6 @@ class Game:
             return list(res.results)
 
         # Run handlers that should run right after the atomic action resolves (e.g. "after this attacks, do ...").
-        # TODO deprecated
-        # post_handlers = self._collect_event_handlers(pre=False, action=action)
-        # if post_handlers:
-        #     self._enqueue_effect_calls(post_handlers, env=pending.env, kwargs=pending.kwargs)
         result_handlers = self._record_action_results(res.results)
         if result_handlers:
             self._enqueue_effect_calls(result_handlers, env=pending.env, kwargs=pending.kwargs)
@@ -991,6 +989,49 @@ class Game:
         for group_id, group in self._step_groups.items():
             assert group.remaining >= 0
 
+    def check_death_prevented(self, target: Monster | Player, killer: Entity) -> tuple[bool, list[ActionCall]]:
+        death_prevented = False
+        extra_actions = []
+
+        for entity in self._iter_event_sources():
+            if getattr(entity, 'on_would_die', None) is not None:
+                replacement_effects = entity.on_would_die(target, game=self)
+                if replacement_effects:
+                    death_prevented = True
+                    self.enqueue_actions(
+                        replacement_effects,
+                        source=entity,
+                    )
+                    break
+
+        if not death_prevented:
+            extra_actions.append(
+                ActionCall(
+                    Kill(target=target, killer=killer, skip_check_death_prevented=True),
+                    source=killer,
+                )
+            )
+
+        if isinstance(target, Monster):
+            # Monsters are marked for destruction even if their death was prevented.
+            # This flag must be set back to False by a death replacement effect later.
+            target.marked_for_destruction = True
+
+        return death_prevented, extra_actions
+
+    def check_overdraw_prevented(self, player: Player) -> bool:
+        for entity in self._iter_event_sources():
+            if getattr(entity, 'on_would_overdraw', None) is not None:
+                replacement_effects = entity.on_would_overdraw(player, game=self)
+                if replacement_effects:
+                    self.enqueue_actions(
+                        replacement_effects,
+                        source=entity,
+                    )
+                    return True
+
+        return False
+
     def apply_damage(
         self,
         target: Monster | Player,
@@ -1047,23 +1088,28 @@ class Game:
             target.hp = max(target.hp - damage, 0)
 
             if target.hp <= 0:
-                self.game_over = True
-                self.dead_players.add(target.id)
+                death_prevented, extra_actions = self.check_death_prevented(target, source)
+            else:
+                death_prevented = False
+                extra_actions = []
+
+            killed = target.hp <= 0 and not death_prevented
 
             return DamageApplyResult(
                 damage=damage,
-                killed=target.hp <= 0,
+                killed=killed,
                 results=[
                     EntityDamagedResult(
                         source_id=source.id,
                         target_id=target.id,
                         target=target.to_snapshot(),
                         amount=damage,
-                        killed=target.hp <= 0,
+                        killed=killed,
                         excess_damage=0,
                         kind=kind,
                     ),
                 ],
+                extra_actions=extra_actions,
             )
 
         dodge_counters = target.get_status(CardStatusId.DODGE)
@@ -1074,14 +1120,16 @@ class Game:
         hp_before = target.hp
         target.hp_missing += damage
         excess_damage = max(damage - hp_before, 0)
-        killed = target.hp <= 0
+
+        if target.hp <= 0:
+            death_prevented, extra_actions = self.check_death_prevented(target, source)
+        else:
+            death_prevented = False
+            extra_actions = []
+
+        killed = target.hp <= 0 and not death_prevented
 
         self.rules.invalidate()
-
-        extra_actions = []
-        if killed:
-            target.marked_for_destruction = True
-            extra_actions.append(ActionCall(Kill(target=target, killer=source), source=source))
 
         return DamageApplyResult(
             damage=damage,
