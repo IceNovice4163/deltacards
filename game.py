@@ -459,7 +459,7 @@ class Game:
             event_handlers = entity.post_event_handlers
             for res_class, event_handler in event_handlers.items():
                 if isinstance(res, res_class):
-                    actions_to_append = event_handler(entity, res)
+                    actions_to_append = event_handler(entity, res, game=self)
                     if actions_to_append is not None:
                         actions.append((entity, actions_to_append))
 

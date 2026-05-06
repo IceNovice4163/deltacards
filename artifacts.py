@@ -1,14 +1,16 @@
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from action_results import MonsterKilledResult, MonsterSummonedResult
 from actions import *
 from cards import Monster
 from entity import Entity, on_event
-from enums import CardKeyword, CardZone, PlayerId
+from enums import Ability, CardKeyword, CardZone, PlayerId
 from targeting import *
 
 if TYPE_CHECKING:
     from player import Player
+    from game import Game
 
 ARTIFACTS = {}
 
@@ -110,9 +112,9 @@ class Solidity(Artifact):
     name = "Solidity"
     rarity = ArtifactRarity.BASE
 
-    @on_event(Kill)
-    def on_kill(self, ctx: 'ActionContext', target: 'Monster | Player', **kwargs):
-        if isinstance(target, Monster) and target.controller_id == self.controller_id and target.has_keyword(CardKeyword.TAUNT):
+    @on_event(MonsterKilledResult)
+    def on_monster_killed(self, res: MonsterKilledResult, game: Game, **kwargs):
+        if res.monster.controller_id == self.controller_id and res.monster.has_keyword(CardKeyword.TAUNT):
             return Move(target=CARD_BY_NAME("Shield") >> GENERATE(), zone=CardZone.DECK, pos='top')
 
         return None
@@ -131,6 +133,26 @@ class Preservation(Artifact):
         return False
 
 
+@artifact(39)
+class Reverberation(Artifact):
+    name = "Reverberation"
+    rarity = ArtifactRarity.LEGENDARY
+
+    @on_event(MonsterSummonedResult)
+    def on_monster_summoned(self, res: MonsterSummonedResult, game: 'Game', **kwargs):
+        if not res.is_played:
+            return None
+
+        monster = game.entity(res.monster_id)
+        if monster.controller_id != self.controller_id:
+            return None
+
+        if not monster.has_ability(Ability.TURBO):
+            return None
+
+        return TriggerAbility(target=monster, ability=Ability.TURBO)
+
+
 @artifact(33)
 class Save(Artifact):
     name = "Save"
@@ -146,9 +168,6 @@ class Save(Artifact):
             else:
                 yield TriggerAbility(target=NEXT_LOST_SOUL, ability=MAGIC)  # TODO
 
-    @on_event(Kill)
-    def on_kill(self, ctx: 'ActionContext', target: 'Monster | Player', **kwargs):
-        if isinstance(target, Monster):
-            return UpdateArtifactCounter(artifact=self, delta=1)
-
-        return None
+    @on_event(MonsterKilledResult)
+    def on_monster_killed(self, res: MonsterKilledResult, game: Game, **kwargs):
+        return UpdateArtifactCounter(artifact=self, delta=1)

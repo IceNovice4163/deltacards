@@ -237,10 +237,17 @@ class Draw(Action):
         if card.zone is not CardZone.DECK or card.controller_id != player.id:
             return ActionOutcome(success=False)
 
+        action_calls = []
+
+        # Turbo: This card will trigger its effect when drawn (except during game start or mulligan).
+        effect = card.get_ability(Ability.TURBO)
+        if effect is not None:
+            action_calls.append(ActionCall(effect, source=card))
+
         if len(player.hand) >= 7:
             return ActionOutcome(
                 success=True,
-                action_calls=[ActionCall(Overdraw(player=player, card=card), source=ctx.source)],
+                action_calls=[ActionCall(Overdraw(player=player, card=card), source=ctx.source), *action_calls],
             )
 
         ctx.game.move_card(card, controller_id=player.id, zone=CardZone.HAND)
@@ -248,6 +255,7 @@ class Draw(Action):
         return ActionOutcome(
             success=True,
             affected=[card],
+            action_calls=action_calls,
         )
 
 
@@ -466,8 +474,9 @@ class Summon(Action):
     pos: Arg[int | None] = Arg(default=None)
     attack: Arg[int | None] = Arg(default=None)
     hp: Arg[int | None] = Arg(default=None)
+    is_played: Arg[bool] = Arg(default=False)
 
-    def execute(self, card: 'Monster', controller: 'Player', pos: int | None, attack: int | None, hp: int | None, *, ctx: ActionContext, **kwargs):
+    def execute(self, card: 'Monster', controller: 'Player', pos: int | None, attack: int | None, hp: int | None, is_played: bool, *, ctx: ActionContext, **kwargs):
         if len(controller.board) == controller.board.MAX_CARDS:
             return ActionOutcome(success=False)
 
@@ -495,6 +504,7 @@ class Summon(Action):
                     source_id=ctx.source.id,
                     monster_id=card.id,
                     monster=card.to_snapshot(),
+                    is_played=is_played,
                 ),
             ),
             affected=[card],
@@ -623,7 +633,7 @@ class Play(Action):
                 affected=[card],
                 action_calls=[
                     *spend_gold_calls,
-                    ActionCall(Summon(card=card, controller=player, pos=pos), source=player),
+                    ActionCall(Summon(card=card, controller=player, pos=pos, is_played=True), source=player),
                     *loop_calls,
                     *magic_calls,
                 ],

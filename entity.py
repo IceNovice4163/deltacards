@@ -64,6 +64,9 @@ class Entity(ABC, metaclass=EntityMeta):
         else:
             return effect
 
+    def has_ability(self, ability: Ability):
+        return self._abilities.get(ability) is not None
+
     def iter_modifiers(self, game: 'Game') -> Iterable[IntModifier]:
         return ()
 

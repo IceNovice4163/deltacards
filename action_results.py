@@ -59,6 +59,7 @@ class AttackAftermathResult(ActionResult):
 class MonsterSummonedResult(ActionResult):
     monster_id: int
     monster: MonsterSnapshot
+    is_played: bool
 
 
 @dataclass(slots=True, kw_only=True)

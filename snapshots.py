@@ -34,6 +34,12 @@ class CardSnapshot(EntitySnapshot):
     creator_base_identity: tuple[str, int] | None
     cost: int
 
+    def has_keyword(self, keyword: CardKeyword) -> bool:
+        return keyword in self.keywords
+
+    def get_status(self, status_id: CardStatusId) -> int:
+        return self.statuses.get(status_id, 0)
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class MonsterSnapshot(CardSnapshot):

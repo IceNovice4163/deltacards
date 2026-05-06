@@ -67,7 +67,7 @@ def test_card_knife():
 class KnightKnight(Monster):
     # After this attacks and survives, heal this by the amount of DMG dealt.
     @on_event(AttackAftermathResult)
-    def on_attack_aftermath(self, res: AttackAftermathResult):
+    def on_attack_aftermath(self, res: AttackAftermathResult, game: Game, **kwargs):
         if res.attacker_id != self.id:
             return None
 
@@ -365,7 +365,7 @@ class SnowdrakesMom(Monster):
     delay = Summon(card=CARD_BY_NAME("Vegetoid") >> GENERATE(), controller=YOU).store_result(res).to(
         Check(SELF.buffs.attack > 0).to(
             Buff(target=res.monster_id, attack=+1, hp=+1)
-            >> AddKeyword(target=res.monster_id, keyword=CardKeyword.TRANSPARENCY)
+            >> AddKeyword(target=res.monster_id, keyword=TRANSPARENCY)
         )
     )
 
@@ -400,7 +400,7 @@ class FrozenEnergy(Spell):
     targets = ALLY_MONSTERS | ENEMY_MONSTERS
     magic = (
         Buff(target=TARGET, attack=+2, hp=+2)
-        >> AddKeyword(target=TARGET, keyword=CardKeyword.HASTE)
+        >> AddKeyword(target=TARGET, keyword=HASTE)
     ).to(
         ScheduleDelayEffect(SELF)
     )
@@ -783,3 +783,27 @@ def test_spider_bakery():
     # Check that Synergy counts monster tribes played current turn only
     rig.p1.play_monster(rig.p1.hand[0])
     assert [c.template.name for c in rig.p1.hand][3:] == ["Spider"]
+
+
+@card(288)
+class Pippins(Monster):
+    # Turbo: If you have 6 or less cards in your hand, draw a card.
+    turbo = Check(COUNT(HAND) <= 6).to(DrawNext(player=YOU))
+
+
+def test_pippins():
+    rig = TestRig.create(p1_deck=[1, 1, 288, 1, 288, 288, 288])
+    assert [c.template.id for c in rig.p1.hand] == [1, 1, 288, 1]
+
+    rig.p1.end_turn()
+    rig.p2.end_turn()
+    assert [c.template.id for c in rig.p1.hand] == [1, 1, 288, 1, 288, 288, 288]
+    assert len(rig.p1.deck) == 18
+
+
+def test_reverberation():
+    rig = TestRig.create(p1_deck=[288], p1_artifacts=[39])
+    assert [c.template.id for c in rig.p1.hand] == [288, 1, 1, 1]
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert [c.template.id for c in rig.p1.hand] == [1, 1, 1, 1]
