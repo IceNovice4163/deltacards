@@ -3,7 +3,7 @@ from typing import Any, Sequence, TYPE_CHECKING
 from constants import GOLD_GAINS
 from containers import Board, CardContainer, Deck
 from entity import Entity
-from enums import PlayerId
+from enums import PlayerId, Tribe
 from snapshots import PlayerSnapshot
 
 if TYPE_CHECKING:
@@ -42,6 +42,8 @@ class Player(Entity):
         self.hp = 30
         self.max_hp = 30
         self.fatigue_counter = 0
+
+        self.tribes_played_this_turn: set[Tribe] = set()
 
         self.game: 'Game' = None
         self.opponent: 'Player' = None

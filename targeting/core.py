@@ -86,6 +86,10 @@ class ValueExpr(ABC):
     def __mod__(self, other) -> 'ValueExpr':
         return BinaryValue(operator.mod, self, to_value(other))
 
+    # Boolean operations
+    def __invert__(self) -> 'ValueExpr':
+        return NotValue(self)
+
     # Comparisons
     def __eq__(self, other) -> 'Predicate':
         return ComparisonPredicate(self, operator.eq, to_value(other))
@@ -135,6 +139,17 @@ class BinaryValue(ValueExpr):
 
     def __repr__(self) -> str:
         return f"({self.left!r} {self.op.__name__} {self.right!r})"
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class NotValue(ValueExpr):
+    value: Any
+
+    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> Any:
+        return not self.value.eval(ctx=ctx, entity=entity, **kwargs)
+
+    def __repr__(self) -> str:
+        return f"(~{self.value!r})"
 
 
 # --------------------

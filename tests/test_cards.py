@@ -751,3 +751,35 @@ def test_preservation_overdraw_prevention():
     rig.p2.play_spell(rig.p2.hand[0])
     assert len(rig.p2.hand) == 7
     assert len(rig.p2.deck) == 15
+
+
+@card(478)
+class SpiderBakery(Monster):
+    # Magic: Add a Spider to your hand and deck.
+    # Synergy: Add a Spider Donut (to the hand) and a Spider Croissant (to the deck) instead.
+    magic = Check(~SYNERGY_TRIGGERED).to(
+        Move(target=CARD_BY_NAME("Spider") >> GENERATE(), zone=CardZone.HAND)
+        >> Move(target=CARD_BY_NAME("Spider") >> GENERATE(), zone=CardZone.DECK)
+    )
+    synergy = (
+        Move(target=CARD_BY_NAME("SpiderDonut") >> GENERATE(), zone=CardZone.HAND)
+        >> Move(target=CARD_BY_NAME("SpiderCroissant") >> GENERATE(), zone=CardZone.DECK)
+    )
+
+
+def test_spider_bakery():
+    rig = TestRig.create(p1_deck=[1, 478, 478, 478])
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert [c.template.name for c in rig.p1.hand][2:] == ["Spider"]
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert [c.template.name for c in rig.p1.hand][2:] == ["Spider Donut"]
+
+    rig.p1.end_turn()
+    rig.p2.end_turn()
+
+    # Check that Synergy counts monster tribes played current turn only
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert [c.template.name for c in rig.p1.hand][3:] == ["Spider"]

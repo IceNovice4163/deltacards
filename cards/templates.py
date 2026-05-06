@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from enums import CardKeyword, CardRarity, CardStatusId, CardType
+from enums import CardKeyword, CardRarity, CardStatusId, CardType, Tribe
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -10,7 +10,7 @@ class CardTemplate:
     rarity: CardRarity
     cost: int
     keywords: CardKeyword
-    statuses: dict[CardStatusId, int] = field(default_factory=dict)
+    statuses: dict[CardStatusId, int]
 
     @property
     def base_identity(self) -> tuple[str, int]:
@@ -25,6 +25,7 @@ class CardTemplate:
 class MonsterTemplate(CardTemplate):
     attack: int
     hp: int
+    tribes: tuple[Tribe, ...]
 
     @property
     def type(self) -> CardType:

@@ -77,6 +77,7 @@ from .values import (
     CLAMP,
     LEAST,
     GREATEST,
+    SYNERGY_TRIGGERED,
 )
 
 from .predicates import (
@@ -85,6 +86,7 @@ from .predicates import (
     DAMAGED,
     HAS_KEYWORD,
     HAS_STATUS,
+    HAS_TRIBE,
     GENERATED,
     NON_GENERATED,
     GENERATED_BY,
@@ -191,6 +193,7 @@ __all__ = [
     'COUNT',
     'EMPTY_SLOTS',
     'CLAMP', 'LEAST', 'GREATEST',
+    'SYNERGY_TRIGGERED',
 
     # Predicates
     'IS_MONSTER',
@@ -198,6 +201,7 @@ __all__ = [
     'DAMAGED',
     'HAS_KEYWORD',
     'HAS_STATUS',
+    'HAS_TRIBE',
     'GENERATED',
     'NON_GENERATED',
     'GENERATED_BY',

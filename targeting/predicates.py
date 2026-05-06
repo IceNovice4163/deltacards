@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from action_results import SpentGoldResult
 from cards import Card, Monster
 from cards.templates import CardTemplate
-from enums import CardKeyword, CardRarity, CardStatusId, CardType
+from enums import CardKeyword, CardRarity, CardStatusId, CardType, Tribe
 
 from .core import Predicate
 from .values import RARITY
@@ -71,6 +71,20 @@ class HasStatusPredicate(Predicate):
 
 
 @dataclass(frozen=True, slots=True, eq=False)
+class HasTribePredicate(Predicate):
+    tribe: Tribe
+
+    def test(self, entity: Card, ctx: 'ActionContext', **kwargs) -> bool:
+        if not isinstance(entity, Monster):
+            return False
+
+        return entity.has_tribe(self.tribe)
+
+    def __repr__(self) -> str:
+        return f"HAS_TRIBE(Tribe.{self.tribe.name})"
+
+
+@dataclass(frozen=True, slots=True, eq=False)
 class GeneratedPredicate(Predicate):
     generated: bool = True
 
@@ -133,6 +147,7 @@ DAMAGED = DamagedPredicate()
 
 HAS_KEYWORD = lambda keyword: HasKeywordPredicate(keyword)
 HAS_STATUS = lambda status_id: HasStatusPredicate(status_id)
+HAS_TRIBE = lambda tribe: HasTribePredicate(tribe)
 
 GENERATED = GeneratedPredicate(True)
 NON_GENERATED = GeneratedPredicate(False)

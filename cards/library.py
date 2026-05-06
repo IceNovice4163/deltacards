@@ -1,5 +1,5 @@
 from cards.templates import CardTemplate, MonsterTemplate, SpellTemplate
-from enums import CardKeyword, CardRarity, CardStatusId, CardType
+from enums import CardKeyword, CardRarity, CardStatusId, CardType, Tribe
 
 
 class CardLibrary:
@@ -39,7 +39,12 @@ class CardLibrary:
 
         match d['typeCard']:
             case CardType.MONSTER.value:
-                return MonsterTemplate(**common, attack=int(d['attack']), hp=int(d['hp']))
+                return MonsterTemplate(
+                    **common,
+                    attack=int(d['attack']),
+                    hp=int(d['hp']),
+                    tribes=tuple(Tribe(tribe_id.lower()) for tribe_id in d['tribes']),
+                )
             case CardType.SPELL.value:
                 return SpellTemplate(**common)
             case _:

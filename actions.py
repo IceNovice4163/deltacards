@@ -5,7 +5,7 @@ from action_results import *
 from actions_base import Action, ActionCall, ActionContext, ActionOutcome, Arg
 from cards import Card, CardZone, CaughtCardData, Monster, Spell
 from entity import Entity
-from enums import Ability, CardKeyword, CardStatusId, DamageKind
+from enums import Ability, CardKeyword, CardStatusId, DamageKind, Tribe
 from player import Player
 from schemas.requests import ChoiceResponse, ChooseEntityPrompt, PendingChoiceRequest
 from targeting import *
@@ -584,9 +584,28 @@ class Play(Action):
 
         magic_calls = []
         if not skip_magic:
+            synergy_triggered = False
+            if isinstance(card, Monster):
+                # Synergy: The monster will trigger its effect when played
+                # and if an ally monster of the same tribe has been played this turn.
+                if not player.tribes_played_this_turn.isdisjoint((Tribe.ALL, *card.tribes)):
+                    synergy_effect = card.get_ability(Ability.SYNERGY)
+                    if synergy_effect is not None:
+                        synergy_triggered = True
+                        magic_calls.append(
+                            ActionCall(synergy_effect, source=card, env={'target': target}),
+                        )
+
+                player.tribes_played_this_turn.update(card.tribes)
+
+            # Magic: The monster will trigger its effect when played on the board.
             effect = card.get_ability(Ability.MAGIC)
             if effect is not None:
-                magic_calls.append(ActionCall(effect, source=card, env={'target': target}))
+                # When both Magic and Synergy effects trigger, Magic effect always triggers first.
+                magic_calls.insert(
+                    0,
+                    ActionCall(effect, source=card, env={'target': target, 'synergy_triggered': synergy_triggered}),
+                )
 
         if isinstance(card, Monster):
             # TODO unsure if needed, currently it's here to allow LOOP to correctly trigger when there are 7 cards in hand
@@ -928,6 +947,8 @@ class AdvanceTurn(Action):
     player: Arg['Player'] = Arg()
 
     def execute(self, player: 'Player', *, ctx: ActionContext, **kwargs):
+        player.tribes_played_this_turn = set()
+
         if list(ctx.game.players.values())[-1] == player:
             ctx.game.turn += 1
 

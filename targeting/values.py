@@ -245,6 +245,19 @@ def EMPTY_SLOTS(selector: TargetSelector) -> EmptySlotsValue:
     return EmptySlotsValue(selector=selector)
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class SynergyTriggeredValue(ValueExpr):
+    """
+    Can only be used inside MAGIC trigger of a monster.
+    Returns True if SYNERGY was triggered.
+    """
+    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> Any:
+        return ctx.env.get('synergy_triggered', False)
+
+    def __repr__(self) -> str:
+        return "SYNERGY_TRIGGERED"
+
+
 ID = AttrValue('id')
 
 TEMPLATE_ID = TemplateIdValue()
@@ -260,3 +273,5 @@ CREATOR_ID = AttrValue('creator_id')
 BASE_COST = BaseStatValue('cost')
 BASE_ATTACK = BaseStatValue('attack')
 BASE_HP = BaseStatValue('hp')
+
+SYNERGY_TRIGGERED = SynergyTriggeredValue()
