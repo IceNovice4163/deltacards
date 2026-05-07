@@ -331,6 +331,7 @@ class TargetSelector(ABC):
             'controller_id',
             'controller',
             'creator_id',
+            'gold',
         ):
             from .values import SelectorAttrValue
             return SelectorAttrValue(self, attr=name)

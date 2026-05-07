@@ -53,6 +53,10 @@ class RigPlayer:
         return self.rig.p2 if self.id is PlayerId.P1 else self.rig.p1
 
     @property
+    def gold(self) -> int:
+        return self.obj.gold
+
+    @property
     def hp(self) -> int:
         return self.obj.hp
 
@@ -248,7 +252,7 @@ class TestRig:
             is_first_turn=False,
         )
 
-        p1.gold = cfg.starting_gold
+        p1.gold = cfg.starting_gold - 1  # first turn gives 1 gold
         p2.gold = cfg.starting_gold
 
         game = Game((p1, p2), seed=123)

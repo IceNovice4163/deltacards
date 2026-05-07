@@ -46,7 +46,7 @@ def test_card_migospel():
 class Knife(Spell):
     # Kill a monster. Deal its COST as DMG to you.
     targets = ALLY_MONSTERS | ENEMY_MONSTERS
-    magic = Kill(target=TARGET) >> Hit(target=CONTROLLER, damage=TARGET.cost)
+    magic = Kill(target=TARGET) >> Hit(target=YOU, damage=TARGET.cost)
 
 
 def test_card_knife():
@@ -104,7 +104,7 @@ def test_card_knightknight():
 @card(6)
 class Vegetoid(Monster):
     # Turn start: Heal 5 HP to you.
-    turn_start = Heal(target=CONTROLLER, amount=5)
+    turn_start = Heal(target=YOU, amount=5)
 
 
 def test_card_vegetoid():
@@ -807,3 +807,48 @@ def test_reverberation():
 
     rig.p1.play_monster(rig.p1.hand[0])
     assert [c.template.id for c in rig.p1.hand] == [1, 1, 1, 1]
+
+
+@card(60)
+class Papyrus(Monster):
+    # After this attacks and kills a monster, this can attack another monster. Magic: Program (2): Gain Armor.
+    magic = Program(2).to(AddKeyword(target=SELF, keyword=ARMOR))
+
+    @on_event(AttackAftermathResult)
+    def on_attack_aftermath(self, res: AttackAftermathResult, game: Game, **kwargs):
+        if res.attacker_id != self.id:
+            return None
+
+        if res.attacker_dead:
+            return None
+
+        if not res.defender_dead:
+            return None
+
+        return RefreshAttacks(target=self)
+
+
+def test_papyrus():
+    rig = TestRig.create(p1_deck=[60, 60], p2_deck=[1, 1], starting_gold=25)
+
+    monster_with_armor = rig.p1.hand[0]
+    monster_without_armor = rig.p1.hand[1]
+
+    rig.p1.play_monster(monster_with_armor)
+    assert monster_with_armor.has_keyword(CardKeyword.ARMOR)
+    assert rig.p1.gold == 25 - (11 + 2)
+
+    rig.p1.play_monster(monster_without_armor)
+    assert not monster_without_armor.has_keyword(CardKeyword.ARMOR)
+    assert rig.p1.gold == 25 - (11 + 2) - 11
+
+    rig.p1.end_turn()
+
+    defender_1 = rig.p2.hand[0]
+    defender_2 = rig.p2.hand[1]
+    rig.p2.play_monster(defender_1)
+    rig.p2.play_monster(defender_2)
+    rig.p2.end_turn()
+
+    rig.p1.attack(monster_without_armor, defender_1)
+    rig.p1.attack(monster_without_armor, defender_2)

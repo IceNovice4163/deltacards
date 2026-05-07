@@ -3,6 +3,7 @@ from typing import Any, Literal, TYPE_CHECKING
 
 from cards import Card, CardZone
 from cards.templates import CardTemplate
+from player import Player
 
 from .core import TargetSelector, TargetingError, ValueExpr, to_value
 
@@ -251,11 +252,28 @@ class SynergyTriggeredValue(ValueExpr):
     Can only be used inside MAGIC trigger of a monster.
     Returns True if SYNERGY was triggered.
     """
-    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> Any:
+    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> bool:
         return ctx.env.get('synergy_triggered', False)
 
     def __repr__(self) -> str:
         return "SYNERGY_TRIGGERED"
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class HasArtifactValue(ValueExpr):
+    artifact_name: str
+
+    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> bool:
+        if entity is None:
+            raise TargetingError(f"HAS_ARTIFACT requires a candidate entity")
+
+        if not isinstance(entity, Player):
+            raise TargetingError(f"HAS_ARTIFACT is not available on {type(entity).__name__}")
+
+        return any(artifact.name == self.artifact_name for artifact in entity.artifacts)
+
+    def __repr__(self) -> str:
+        return "HAS_ARTIFACT"
 
 
 ID = AttrValue('id')
@@ -275,3 +293,5 @@ BASE_ATTACK = BaseStatValue('attack')
 BASE_HP = BaseStatValue('hp')
 
 SYNERGY_TRIGGERED = SynergyTriggeredValue()
+
+HAS_ARTIFACT = HasArtifactValue

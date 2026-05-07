@@ -78,6 +78,7 @@ from .values import (
     LEAST,
     GREATEST,
     SYNERGY_TRIGGERED,
+    HAS_ARTIFACT,
 )
 
 from .predicates import (
@@ -116,6 +117,12 @@ from .vars import (
     VAR,
     CHOICE_SELECTED,
     CHOICE_NOT_SELECTED,
+)
+
+from .macros import (
+    Program,
+    Switch,
+    SwitchPiece,
 )
 
 
@@ -194,6 +201,7 @@ __all__ = [
     'EMPTY_SLOTS',
     'CLAMP', 'LEAST', 'GREATEST',
     'SYNERGY_TRIGGERED',
+    'HAS_ARTIFACT',
 
     # Predicates
     'IS_MONSTER',
@@ -230,4 +238,9 @@ __all__ = [
     'VAR',
     'CHOICE_SELECTED',
     'CHOICE_NOT_SELECTED',
+
+    # Macros
+    'Program',
+    'Switch',
+    'SwitchPiece',
 ]
