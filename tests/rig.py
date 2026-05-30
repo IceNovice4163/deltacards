@@ -175,7 +175,7 @@ class RigPlayer:
     def attack(
         self,
         attacker: Monster,
-        defender: Monster | Player,
+        defender: Monster | Player | RigPlayer,
     ) -> EngineUpdate:
         req = self.require_action_request()
 

@@ -475,7 +475,7 @@ def test_card_undyne_no_spear_summon():
 
 @card(427)
 class KillerCook(Monster):
-    # Magic: Add Flour, Eggs and Milk to your hand. Dust: Draw a TOKEN card.
+    # Magic: Add Flour, Eggs and Milk to your hand.
     X: Var[TargetSelector] = Var(TargetSelector)
 
     magic = ForEach(
@@ -608,7 +608,7 @@ def test_card_redwagon():
     rig.p1.play_monster(dummy)
     rig.p1.play_monster(catcher, target=dummy)
 
-    assert dummy.zone == CardZone.INVALID
+    assert dummy.zone is CardZone.INVALID
     assert catcher.caught_card is not None
     assert catcher.caught_card.template_id == 1
     assert catcher.caught_card.controller_id == dummy.controller_id
@@ -681,7 +681,7 @@ def test_theheroine_death_prevention_on_kill():
     rig.p1.play_monster(monster, slot=3)
     rig.p1.play_spell(knife, target=monster)
 
-    assert monster.zone == CardZone.BOARD
+    assert monster.zone is CardZone.BOARD
     assert monster.pos == 3
     assert monster.base.attack == base_attack - 1
     assert monster.base.hp == base_hp - 2
@@ -705,7 +705,7 @@ def test_theheroine_death_prevention_on_combat_damage():
 
     rig.p1.attack(monster, big_monster)
 
-    assert monster.zone == CardZone.BOARD
+    assert monster.zone is CardZone.BOARD
     assert monster.pos == 3
     assert monster.base.attack == base_attack - 1
     assert monster.base.hp == base_hp - 2
@@ -723,7 +723,7 @@ def test_theheroine_death_prevention_failure():
     rig.p1.play_monster(dummy)
     rig.p1.play_spell(knife, target=monster)
 
-    assert monster.zone == CardZone.DUSTPILE
+    assert monster.zone is CardZone.DUSTPILE
     assert len(rig.p1.hand) == 1
 
 
@@ -850,5 +850,75 @@ def test_papyrus():
     rig.p2.play_monster(defender_2)
     rig.p2.end_turn()
 
+    # Should be able to attack both monsters in a row
     rig.p1.attack(monster_without_armor, defender_1)
     rig.p1.attack(monster_without_armor, defender_2)
+
+
+@card(760)
+class ButlerRalsei(Monster):
+    # Shock: Give +2 HP to you.
+    # Support: Program (1): Give the attacker +2 HP and trigger the Shock.
+    shock = Buff(target=YOU, hp=2)
+    support = Program(1).to(
+        Buff(target=ATTACKER, hp=2) >> TriggerAbility(target=SELF, ability=SHOCK)
+    )
+
+
+def test_butlerralsei():
+    rig = TestRig.create(p1_deck=[760, 1, 71])
+    rig.p1.obj.hp = 10
+
+    butler_ralsei = rig.p1.hand[0]
+    dummy = rig.p1.hand[1]
+    spell = rig.p1.hand[2]
+
+    rig.p1.play_monster(butler_ralsei)
+    rig.p1.play_monster(dummy)
+
+    rig.p1.end_turn()
+    rig.p2.end_turn()
+
+    # Should trigger Support
+    rig.p1.attack(dummy, rig.p2)
+    assert dummy.hp == dummy.base.hp + 2
+    assert rig.p1.hp == 10 + 2
+
+    # Should NOT trigger Support
+    rig.p1.attack(butler_ralsei, rig.p2)
+    assert butler_ralsei.hp == butler_ralsei.base.hp
+    assert rig.p1.hp == 10 + 2
+
+    # Should trigger Shock
+    rig.p1.play_spell(spell, target=dummy)
+    assert rig.p1.hp == 10 + 2 + 2
+
+
+@card(855)
+class QuickDraw(Spell):
+    # Make a monster Wanted and deal 3 DMG to it. Bullseye: Draw a card.
+    targets = ALLY_MONSTERS | ENEMY_MONSTERS
+    magic = AddKeyword(target=TARGET, keyword=WANTED) >> Hit(target=TARGET, damage=3)
+    bullseye = DrawNext(player=YOU)
+
+
+def test_quickdraw():
+    rig = TestRig.create(p1_deck=[1, 1, 855, 855])
+
+    dummy_bullseye = rig.p1.hand[0]
+    dummy_no_bullseye = rig.p1.hand[1]
+
+    rig.p1.play_monster(dummy_bullseye)
+    rig.p1.play_monster(dummy_no_bullseye)
+
+    dummy_bullseye.hp_missing = dummy_bullseye.hp - 3
+    dummy_no_bullseye.hp_missing = dummy_no_bullseye.hp - 2
+    assert [c.template.id for c in rig.p1.hand] == [855, 855]
+
+    rig.p1.play_spell(rig.p1.hand[0], target=dummy_bullseye)
+    assert dummy_bullseye.zone is CardZone.DUSTPILE
+    assert [c.template.id for c in rig.p1.hand] == [855, 1]
+
+    rig.p1.play_spell(rig.p1.hand[0], target=dummy_no_bullseye)
+    assert dummy_bullseye.zone is CardZone.DUSTPILE
+    assert [c.template.id for c in rig.p1.hand] == [1]

@@ -9,7 +9,7 @@ from actions_base import Action, ActionCall, ActionContext, ActionOutcome, evalu
 from cards import Card, CardZone, Monster, Spell, create_card
 from effects import EffectBase, EffectStep, StepResult
 from entity import Entity
-from enums import CardKeyword, CardStatusId, DamageKind, PlayerId
+from enums import Ability, CardKeyword, CardStatusId, DamageKind, PlayerId
 from modifiers import DamageQuery, RulesEngine
 from player import Player
 from schemas.requests import PendingRequest
@@ -433,13 +433,18 @@ class Game:
 
         return True, 'ok'
 
-    def _iter_event_sources(self):
-        for player in (self.turn_player, self.turn_player.opponent):
-            yield from player.board.cards
+    def _iter_event_sources_of_player(self, player: Player, board_only: bool = False):
+        yield from player.board.cards
+
+        if not board_only:
             if player.soul is not None:
                 yield player.soul
             if player.artifacts:
                 yield from player.artifacts
+
+    def _iter_event_sources(self):
+        for player in (self.turn_player, self.turn_player.opponent):
+            yield from self._iter_event_sources_of_player(player)
 
     def _collect_event_handlers(self, pre: bool, action: Action, resolved_args: dict[str, Any]) -> list[tuple[Entity, Action]]:
         actions = []
@@ -989,6 +994,14 @@ class Game:
         for group_id, group in self._step_groups.items():
             assert group.remaining >= 0
 
+    def collect_ability_listener_effects(self, ability: Ability, player: Player, board_only: bool = False):
+        for entity in self._iter_event_sources_of_player(player, board_only=board_only):
+            effect = entity.get_ability(ability)
+            if effect is None:
+                continue
+
+            yield effect, entity
+
     def check_death_prevented(self, target: Monster | Player, killer: Entity) -> tuple[bool, list[ActionCall]]:
         death_prevented = False
         extra_actions = []
@@ -1123,6 +1136,15 @@ class Game:
 
         if target.hp <= 0:
             death_prevented, extra_actions = self.check_death_prevented(target, source)
+
+            # Bullseye: If this entity brings a monster to exactly 0 HP, trigger this effect.
+            if excess_damage == 0 and not death_prevented:
+                effect = source.get_ability(Ability.BULLSEYE)
+                if effect is not None:
+                    extra_actions.append(
+                        ActionCall(effect, source=source),
+                    )
+
         else:
             death_prevented = False
             extra_actions = []

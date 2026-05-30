@@ -14,6 +14,7 @@ from .selectors import (
     SELF,
     TARGET,
     KILLER,
+    ATTACKER,
     YOU,
     CONTROLLER,
     OPPONENT,
@@ -172,7 +173,7 @@ __all__ = [
     'AmbiguousTargetError',
 
     # Selectors
-    'SELF', 'TARGET', 'KILLER',
+    'SELF', 'TARGET', 'KILLER', 'ATTACKER',
     'YOU', 'CONTROLLER', 'OPPONENT', 'TURN_PLAYER',
 
     'BOARD', 'HAND', 'DECK', 'DUSTPILE', 'ERASED',

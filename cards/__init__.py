@@ -5,7 +5,7 @@ from typing import Generic, TypeVar
 from cards.library import LIBRARY
 from cards.templates import CardTemplate, MonsterTemplate
 from entity import Entity
-from enums import CardKeyword, CardRarity, CardStatusId, CardType, CardZone, PlayerId, Tribe
+from enums import Ability, CardKeyword, CardRarity, CardStatusId, CardType, CardZone, PlayerId, Tribe
 from snapshots import CardSnapshot, MonsterSnapshot, SpellSnapshot
 
 TTemplate = TypeVar('TTemplate', bound=CardTemplate)
@@ -227,10 +227,6 @@ class Card(Entity, Generic[TTemplate]):
             'statuses': {status_id.value: value for status_id, value in self.statuses.items()},
         }
 
-    magic = None
-    dust = None
-    delay = None
-
 
 class Monster(Card[MonsterTemplate]):
     def __init__(
@@ -338,6 +334,18 @@ class Monster(Card[MonsterTemplate]):
             return 1
 
         return 0
+
+    def get_ability(self, ability: Ability):
+        if self.silenced:
+            return None
+
+        return super().get_ability(ability)
+
+    def has_ability(self, ability: Ability):
+        if self.silenced:
+            return None
+
+        return super().has_ability(ability)
 
     def has_tribe(self, tribe: Tribe) -> bool:
         return (tribe in self.template.tribes) or (Tribe.ALL in self.template.tribes)

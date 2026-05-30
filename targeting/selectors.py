@@ -29,7 +29,12 @@ class EnvSelector(TargetSelector):
     key: str
 
     def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
-        return resolve_selector_value(ctx.env[self.key], ctx=ctx, **kwargs)
+        try:
+            value = ctx.env[self.key]
+        except KeyError:
+            raise TargetingError(f"ctx.env['{self.key}'] is not set")
+
+        return resolve_selector_value(value, ctx=ctx, **kwargs)
 
     def __repr__(self) -> str:
         return self.key.upper()
@@ -335,6 +340,7 @@ def CARD_BY_NAME(name: str) -> CardByNameSelector:
 SELF = SelfSelector()
 TARGET = EnvSelector('target')
 KILLER = EnvSelector('killer')
+ATTACKER = EnvSelector('attacker')
 
 YOU = YouSelector()
 CONTROLLER = YOU

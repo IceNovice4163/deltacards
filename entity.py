@@ -73,9 +73,6 @@ class Entity(ABC, metaclass=EntityMeta):
     def serialize(self) -> dict[str, Any]:
         raise NotImplementedError
 
-    turn_start = None
-    turn_end = None
-
 
 def on_event(action: Type['Action' | 'ActionResult'], pre: bool = False):
     class OnEvent:

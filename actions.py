@@ -524,7 +524,8 @@ class Play(Action):
         if card.controller_id != player.id or card.zone is not CardZone.HAND:
             return ActionOutcome(success=False)
 
-        if player.gold < card.cost:
+        cost = card.cost
+        if player.gold < cost:
             return ActionOutcome(success=False)
 
         if isinstance(card, Monster):
@@ -589,26 +590,25 @@ class Play(Action):
                     return ActionOutcome(success=False)
 
         spend_gold_calls = [
-            ActionCall(SpendGold(player=player, amount=card.cost), source=card),
+            ActionCall(SpendGold(player=player, amount=cost, spent_on_spell=isinstance(card, Spell)), source=card),
         ]
 
         magic_calls = []
-        if not skip_magic:
+        if isinstance(card, Monster) and not skip_magic:
+            # Synergy: The monster will trigger its effect when played
+            # and if an ally monster of the same tribe has been played this turn.
             synergy_triggered = False
-            if isinstance(card, Monster):
-                # Synergy: The monster will trigger its effect when played
-                # and if an ally monster of the same tribe has been played this turn.
-                if not player.tribes_played_this_turn.isdisjoint((Tribe.ALL, *card.tribes)):
-                    synergy_effect = card.get_ability(Ability.SYNERGY)
-                    if synergy_effect is not None:
-                        synergy_triggered = True
-                        magic_calls.append(
-                            ActionCall(synergy_effect, source=card, env={'target': target}),
-                        )
+            if not player.tribes_played_this_turn.isdisjoint((Tribe.ALL, *card.tribes)):
+                synergy_effect = card.get_ability(Ability.SYNERGY)
+                if synergy_effect is not None:
+                    synergy_triggered = True
+                    magic_calls.append(
+                        ActionCall(synergy_effect, source=card, env={'target': target}),
+                    )
 
-                player.tribes_played_this_turn.update(card.tribes)
+            player.tribes_played_this_turn.update(card.tribes)
 
-            # Magic: The monster will trigger its effect when played on the board.
+            # Magic: The card will trigger its effect when played.
             effect = card.get_ability(Ability.MAGIC)
             if effect is not None:
                 # When both Magic and Synergy effects trigger, Magic effect always triggers first.
@@ -640,6 +640,15 @@ class Play(Action):
             )
 
         if isinstance(card, Spell):
+            # Shock: After you cast a spell with a base cost of 2 or more, trigger this effect.
+            # (note: Shock triggers only when a spell is played by a player and not if it's cast by another effect)
+            shock_calls = []
+            if card.base.cost >= 2:
+                for effect, source in ctx.game.collect_ability_listener_effects(Ability.SHOCK, player=player):
+                    shock_calls.append(
+                        ActionCall(effect, source=source, env={'spell_cost': cost}),
+                    )
+
             return ActionOutcome(
                 success=True,
                 affected=[card],
@@ -647,6 +656,7 @@ class Play(Action):
                     *spend_gold_calls,
                     ActionCall(Cast(card=card, controller=player, effect_target=target), source=player),
                     ActionCall(RemoveCardFromStack(card=card), source=card),
+                    *shock_calls,
                 ],
             )
 
@@ -685,9 +695,6 @@ class TriggerAbility(Action):
     ability: Arg[Ability] = Arg()
 
     def execute(self, target: Card, ability: Ability, *, ctx: ActionContext, **kwargs):
-        if isinstance(target, Monster) and target.has_keyword(CardKeyword.SILENCED):
-            return ActionOutcome(success=False)
-
         effect = target.get_ability(ability)
         if effect is None:
             return ActionOutcome(success=True)
@@ -751,10 +758,25 @@ class Attack(Action):
         attacker.has_attacked = True
         ctx.env['combat_result'] = {}  # shared between CombatDamage and AttackAftermath
 
+        # Support: This monster will trigger its effect each time another ally monster attacks.
+        support_calls = []
+        for effect, source in ctx.game.collect_ability_listener_effects(
+            Ability.SUPPORT,
+            player=ctx.game.player(attacker.controller_id),
+            board_only=True,
+        ):
+            if source is attacker:
+                continue
+
+            support_calls.append(
+                ActionCall(effect, source=source, env={'attacker': attacker}),
+            )
+
         return ActionOutcome(
             success=True,
             affected=[attacker, defender],
             action_calls=[
+                *support_calls,
                 ActionCall(CombatDamage(attacker=attacker, defender=defender), source=attacker, env=ctx.env),
                 ActionCall(AttackAftermath(attacker=attacker, defender=defender), source=attacker, env=ctx.env),
             ],
@@ -836,7 +858,8 @@ class AttackAftermath(Action):
 
     def execute(self, attacker: 'Monster', defender: 'Monster | Player', *, ctx: ActionContext, **kwargs):
         if 'combat_result' not in ctx.env:
-            raise RuntimeError(f"'combat_result' not in env: {ctx.env}")
+            # CombatDamage action failed
+            return ActionOutcome(success=False)
 
         if attacker.zone == CardZone.BOARD:
             attacker.remove_keyword(CardKeyword.CHARGE)
