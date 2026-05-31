@@ -1,11 +1,11 @@
-from action_results import AttackAftermathResult
+from action_results import AttackAftermathResult, MonsterSummonedResult
 from actions import *
 from cards import Monster, Spell, card
 from effects import Check, For, ForEach, StepResult
 from entity import Entity, on_event
 from enums import CardKeyword, CardStatusId, CardZone, DamageKind
 from game import Game
-from modifiers import DamageLayer, IntModifier, ModKind, StatLayer
+from modifiers import CostLayer, CostQuery, DamageLayer, DamageQuery, IntModifier, ModKind, StatLayer
 from targeting import *
 from .rig import TestRig
 
@@ -922,3 +922,153 @@ def test_quickdraw():
     rig.p1.play_spell(rig.p1.hand[0], target=dummy_no_bullseye)
     assert dummy_bullseye.zone is CardZone.DUSTPILE
     assert [c.template.id for c in rig.p1.hand] == [1]
+
+
+@card(79)
+class Penetration(Spell):
+    # Silence a monster.
+    targets = ALLY_MONSTERS | ENEMY_MONSTERS
+    magic = Silence(target=TARGET)
+
+
+def test_card_penetration():
+    rig = TestRig.create(p1_deck=[1, 79])
+
+    dummy = rig.p1.hand[0]
+    spell = rig.p1.hand[1]
+
+    rig.p1.play_monster(dummy)
+    dummy.buff(attack=+2, hp=+3)
+    dummy.add_keyword(CardKeyword.TAUNT)
+    dummy.set_status(CardStatusId.PARALYZED, 2)
+
+    assert dummy.attack == dummy.base.attack + 2
+    assert dummy.hp == dummy.base.hp + 3
+    assert dummy.has_keyword(CardKeyword.TAUNT)
+    assert dummy.get_status(CardStatusId.PARALYZED) == 2
+
+    rig.p1.play_spell(spell, target=dummy)
+
+    assert dummy.has_keyword(CardKeyword.SILENCED)
+    assert not dummy.has_keyword(CardKeyword.TAUNT)
+    assert dummy.get_status(CardStatusId.PARALYZED) == 0
+    assert dummy.attack == dummy.base.attack
+    assert dummy.max_hp == dummy.base.hp
+    assert dummy.hp == dummy.base.hp
+
+
+@card(559)
+class LaggyTV(Monster):
+    # Monsters in your hand have +1 COST. Whenever you play a monster, give it +1/+2.
+    def iter_modifiers(self, game):
+        if (self.zone is not CardZone.BOARD) or self.silenced:
+            return
+
+        def applies(q: CostQuery) -> bool:
+            return (
+                q.card.zone is CardZone.HAND
+                and isinstance(q.card, Monster)
+                and q.card.controller_id == self.controller_id
+            )
+
+        yield IntModifier(
+            kind=ModKind.COST,
+            layer=CostLayer.ADD,
+            source=self,
+            description="Monsters in your hand have +1 COST",
+            applies=applies,
+            apply=lambda cost, q: cost + 1,
+        )
+
+    @on_event(MonsterSummonedResult)
+    def on_monster_summoned(self, res: MonsterSummonedResult, game: 'Game', **kwargs):
+        if not res.is_played:
+            return None
+
+        monster = game.entity(res.monster_id)
+        if monster.controller_id != self.controller_id:
+            return None
+
+        return Buff(target=monster, attack=+1, hp=+2)
+
+
+def test_card_laggytv():
+    rig = TestRig.create(p1_deck=[559, 1, 79, 1], p2_deck=[1])
+
+    laggy_tv = rig.p1.hand[0]
+    dummy = rig.p1.hand[1]
+    penetration = rig.p1.hand[2]
+    dummy_2 = rig.p1.hand[3]
+    opponent_dummy = rig.p2.hand[0]
+
+    rig.p1.play_monster(laggy_tv)
+
+    assert laggy_tv.attack == laggy_tv.base.attack + 1
+    assert laggy_tv.hp == laggy_tv.base.hp + 2
+    assert dummy.cost == dummy.base.cost + 1
+    assert dummy_2.cost == dummy_2.base.cost + 1
+    assert penetration.cost == penetration.base.cost
+    assert opponent_dummy.cost == opponent_dummy.base.cost
+
+    rig.p1.play_monster(dummy)
+
+    assert dummy.attack == dummy.base.attack + 1
+    assert dummy.hp == dummy.base.hp + 2
+    assert dummy.cost == dummy.base.cost
+
+    rig.p1.play_spell(penetration, target=laggy_tv)
+
+    # Cost modification should no longer apply
+    assert dummy_2.cost == dummy_2.base.cost
+
+
+@card(145)
+class DiamondBoy1(Monster):
+    # All other non-Armor ally monsters take 1 less DMG (can't stack).
+    def iter_modifiers(self, game):
+        if (self.zone is not CardZone.BOARD) or self.silenced:
+            return
+
+        def applies(q: DamageQuery) -> bool:
+            return (
+                q.target is not self
+                and isinstance(q.target, Monster)
+                and q.target.controller_id == self.controller_id
+                and not q.target.has_keyword(CardKeyword.ARMOR)
+            )
+
+        yield IntModifier(
+            kind=ModKind.DAMAGE,
+            layer=DamageLayer.ADD,
+            source=self,
+            description="Other non-Armor ally monsters take 1 less DMG (can't stack)",
+            applies=applies,
+            apply=lambda dmg, q: max(dmg - 1, 0),
+            unique=True,
+            key="non_armor_allies:-1_damage",
+        )
+
+
+def test_card_diamondboy1():
+    rig = TestRig.create(p1_deck=[145, 145, 1, 1], p2_deck=[737, 737])
+
+    monster_1 = rig.p1.hand[0]
+    monster_2 = rig.p1.hand[1]
+    dummy = rig.p1.hand[2]
+    dummy_with_armor = rig.p1.hand[3]
+    spell_1 = rig.p2.hand[0]
+    spell_2 = rig.p2.hand[1]
+
+    rig.p1.play_monster(monster_1)
+    rig.p1.play_monster(monster_2)
+    rig.p1.play_monster(dummy)
+    rig.p1.play_monster(dummy_with_armor)
+    dummy_with_armor.add_keyword(CardKeyword.ARMOR)
+
+    rig.p1.end_turn()
+
+    rig.p2.play_spell(spell_1, target=dummy)
+    assert dummy.hp == dummy.base.hp - 1
+
+    rig.p2.play_spell(spell_2, target=dummy_with_armor)
+    assert dummy_with_armor.hp == dummy_with_armor.base.hp - 1
