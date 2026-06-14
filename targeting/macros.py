@@ -1,4 +1,5 @@
-from .selectors import SELF, YOU
+from .selectors import NextLostSoulSelector, SELF, YOU
+from .transforms import GENERATE
 from .values import HAS_ARTIFACT
 
 
@@ -18,3 +19,6 @@ def SwitchPiece(left, right):
         left >> right,
         else_=Switch(left, right)
     )
+
+
+NEXT_LOST_SOUL = NextLostSoulSelector() >> GENERATE()

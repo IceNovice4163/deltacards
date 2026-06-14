@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Literal, TYPE_CHECKING
 
-from cards import CardZone, Monster
+from cards import Card, CardZone, Monster
 from cards.templates import CardTemplate
 from entity import Entity
 from player import Player
@@ -158,6 +158,75 @@ class GenerateCardsTransform(Transform):
         return f"GENERATE(controller={self.controller!r}, creator={self.creator!r})"
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class CopyTransform(Transform):
+    exact: bool
+    controller: TargetSelector
+    creator: TargetSelector | None = None
+
+    def _resolve_creator(self, ctx: 'ActionContext', **kwargs) -> Entity | None:
+        if self.creator is None:
+            if isinstance(ctx.source, Entity):
+                return ctx.source
+            else:
+                raise TargetingError(f"COPY(): unable to identify copy source from `ctx.source`")
+
+        creator = self.creator.eval_optional_one(ctx=ctx, **kwargs)
+        if creator is None:
+            raise TargetingError(f"COPY(): unable to identify copy source from `creator`")
+
+        if not isinstance(creator, Entity):
+            raise TargetingError(f"COPY() creator must be an entity, got {type(creator).__name__}")
+
+        return creator
+
+    def apply(self, entities: list[Any], ctx: 'ActionContext', **kwargs) -> list[Any]:
+        if not entities:
+            return []
+
+        controller = self.controller.eval_optional_one(ctx=ctx, **kwargs)
+        if controller is None:
+            return []
+
+        creator = self._resolve_creator(ctx, **kwargs)
+
+        assert all(isinstance(e, Card) for e in entities)
+
+        result = []
+        for card in entities:
+            if self.exact:
+                result.append(
+                    ctx.game.create_card_copy_exact(
+                        card,
+                        controller_id=controller.id,
+                        creator_id=creator.id,
+                        creator_base_identity=creator.base_identity,
+                    )
+                )
+            else:
+                result.append(
+                    ctx.game.create_card_copy(
+                        card,
+                        controller_id=controller.id,
+                        creator_id=creator.id,
+                        creator_base_identity=creator.base_identity,
+                    )
+                )
+
+        return result
+
+    def __repr__(self) -> str:
+        name = "EXACT_COPY" if self.exact else "COPY"
+        args = []
+
+        if self.controller is not YOU:
+            args.append(f"controller={self.controller!r}")
+        if self.creator is not None:
+            args.append(f"creator={self.creator!r}")
+
+        return f"{name}({', '.join(args)})"
+
+
 def RANDOM(n: int = 1) -> RandomTransform:
     return RandomTransform(n)
 
@@ -183,6 +252,28 @@ def GENERATE(
     creator: TargetSelector | None = None,
 ) -> GenerateCardsTransform:
     return GenerateCardsTransform(
+        controller=YOU if controller is None else controller,
+        creator=creator,
+    )
+
+
+def COPY(
+    controller: TargetSelector | None = None,
+    creator: TargetSelector | None = None,
+) -> CopyTransform:
+    return CopyTransform(
+        exact=False,
+        controller=YOU if controller is None else controller,
+        creator=creator,
+    )
+
+
+def EXACT_COPY(
+    controller: TargetSelector | None = None,
+    creator: TargetSelector | None = None,
+) -> CopyTransform:
+    return CopyTransform(
+        exact=True,
         controller=YOU if controller is None else controller,
         creator=creator,
     )

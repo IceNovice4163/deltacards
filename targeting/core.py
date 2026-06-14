@@ -322,6 +322,7 @@ class TargetSelector(ABC):
         if name in (
             'id',
             'template_id',
+            'template_name',
             'rarity',
             'cost',
             'attack',

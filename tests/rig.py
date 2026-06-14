@@ -120,7 +120,7 @@ class RigPlayer:
         if isinstance(card, int):
             card = self.obj.hand.get(card)
 
-        assert isinstance(card, Monster)
+        assert isinstance(card, Monster), repr(card)
 
         self.rig.send(
             PlayerActionResponse(
@@ -151,7 +151,7 @@ class RigPlayer:
         if isinstance(card, int):
             card = self.obj.hand.get(card)
 
-        assert isinstance(card, Spell)
+        assert isinstance(card, Spell), repr(card)
 
         self.rig.send(
             PlayerActionResponse(

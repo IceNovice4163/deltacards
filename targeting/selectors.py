@@ -337,6 +337,28 @@ def CARD_BY_NAME(name: str) -> CardByNameSelector:
     return CardByNameSelector(name=name)
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class NextLostSoulSelector(TargetSelector):
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        lost_soul_card_names = ("LostAlphys", "LostPapyrus", "LostUndyne", "LostToriel", "LostAsgore", "LostSans")
+        player_id = ctx.source.controller_id
+        player = ctx.game.player(player_id)
+
+        if player.next_lost_soul is not None:
+            card = LIBRARY.get_by_name(lost_soul_card_names[player.next_lost_soul])
+            player.next_lost_soul += 1
+            if player.next_lost_soul >= len(lost_soul_card_names):
+                player.next_lost_soul = 0
+
+        else:
+            card = LIBRARY.get_by_name(ctx.game.rng.choice(lost_soul_card_names))
+
+        return [card]
+
+    def __repr__(self) -> str:
+        return "NEXT_LOST_SOUL"
+
+
 SELF = SelfSelector()
 TARGET = EnvSelector('target')
 KILLER = EnvSelector('killer')

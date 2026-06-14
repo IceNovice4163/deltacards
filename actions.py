@@ -27,12 +27,12 @@ __all__ = (
     'Move',
     'Summon', 'Play', 'Cast', 'RemoveCardFromStack', 'TriggerAbility',
     'Catch', 'ReleaseCaughtCard',
-    'Erase',
+    'Erase', 'TransformCard',
     'Attack', 'CombatDamage', 'AttackAftermath', 'RefreshAttacks',
     'EarnGold', 'SpendGold', 'SetGold',
     'AddArtifact', 'UpdateArtifactCounter',
     'ScheduleEffect', 'ScheduleDelayEffect',
-    'AdvanceTurn', 'ResolveScheduledEffectsAction',
+    'SkipNextTurn', 'AdvanceTurn', 'ResolveScheduledEffectsAction',
     'PlayerStartTurnAction', 'PlayerEndTurnAction',
 )
 
@@ -624,7 +624,12 @@ class Play(Action):
             loop_calls = []
             loop_counters = card.get_status(CardStatusId.LOOP)
             if loop_counters >= 1:
-                copy = ctx.game.create_card_copy(card, creator_id=card.id, creator_base_identity=card.base_identity)
+                copy = ctx.game.create_card_copy(
+                    card,
+                    controller_id=card.controller_id,
+                    creator_id=card.id,
+                    creator_base_identity=card.base_identity,
+                )
                 copy.set_status(CardStatusId.LOOP, loop_counters - 1)
                 loop_calls.append(ActionCall(Move(target=copy, zone=CardZone.HAND), source=card))
 
@@ -743,6 +748,23 @@ class Erase(Action):
     def execute(self, target: 'Card', *, ctx: ActionContext, **kwargs):
         ctx.game.move_card(target, target.controller_id, CardZone.ERASED)
         return ActionOutcome(success=True, affected=[target])
+
+
+class TransformCard(Action):
+    target: Arg['Card'] = Arg(many=True)
+    new_card: Arg['Card'] = Arg()
+
+    def execute(self, target: 'Card', new_card: 'Card', *, ctx: ActionContext, **kwargs):
+        assert new_card.zone == CardZone.INVALID
+
+        controller_id = target.controller_id
+        zone = target.zone
+        pos = getattr(target, 'pos', None)
+
+        ctx.game.move_card(target, controller_id, CardZone.ERASED)
+        ctx.game.move_card(new_card, controller_id, zone, pos=pos)
+
+        return ActionOutcome(success=True, affected=[target, new_card])
 
 
 class Attack(Action):
@@ -976,6 +998,14 @@ def ScheduleDelayEffect(target: 'Entity') -> ScheduleEffect:
     return ScheduleEffect(target=target, name='delay')
 
 
+class SkipNextTurn(Action):
+    player: Arg['Player'] = Arg()
+
+    def execute(self, player: 'Player', *, ctx: ActionContext, **kwargs):
+        player.turns_to_skip += 1
+        return ActionOutcome(success=True)
+
+
 class AdvanceTurn(Action):
     player: Arg['Player'] = Arg()
 
@@ -1020,6 +1050,13 @@ class PlayerStartTurnAction(Action):
     def execute(self, player: 'Player', *, ctx: ActionContext, **kwargs):
         from timing_windows import run_player_start_turn_window
 
+        extra_action_calls = []
+        if player.turns_to_skip > 0:
+            player.turns_to_skip -= 1
+            extra_action_calls.append(
+                ActionCall(PlayerEndTurnAction(player=player), source=player)
+            )
+
         return ActionOutcome(
             success=True,
             affected=[player],
@@ -1028,7 +1065,8 @@ class PlayerStartTurnAction(Action):
                     run_player_start_turn_window,
                     source=player,
                     kwargs={'player': player},
-                )
+                ),
+                *extra_action_calls,
             ],
         )
 

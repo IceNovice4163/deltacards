@@ -193,15 +193,37 @@ class Game:
     def create_card_copy(
         self,
         card: Card,
-        creator_id: int,
+        controller_id: PlayerId,
+        creator_id: int | None = None,
         creator_base_identity: tuple[str, int] | None = None,
     ) -> Card:
+        """Create a base copy of a card from template."""
+        if not isinstance(card, Card):
+            raise TypeError(f"Expected Card, got {type(card).__name__}")
+
         return self.create_card(
             template_id=card.template.id,
-            controller_id=card.controller_id,
+            controller_id=controller_id,
             creator_id=creator_id,
             creator_base_identity=creator_base_identity,
         )
+
+    def create_card_copy_exact(
+        self,
+        card: Card,
+        controller_id: PlayerId,
+        creator_id: int | None = None,
+        creator_base_identity: tuple[str, int] | None = None,
+    ) -> Card:
+        """Create an exact copy of a card."""
+        new_card = self.create_card_copy(
+            card,
+            creator_id=creator_id,
+            creator_base_identity=creator_base_identity,
+            controller_id=controller_id,
+        )
+        new_card.copy_exact_state_from(card)
+        return new_card
 
     def remove_card_from_current_zone(self, card: Card) -> None:
         if card.zone is CardZone.STACK:

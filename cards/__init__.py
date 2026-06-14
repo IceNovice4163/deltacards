@@ -1,5 +1,5 @@
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Generic, TypeVar
 
 from cards.library import LIBRARY
@@ -127,6 +127,14 @@ class Card(Entity, Generic[TTemplate]):
         raise NotImplementedError
 
     @property
+    def template_id(self) -> int:
+        return self.template.id
+
+    @property
+    def template_name(self) -> str:
+        return self.template.name
+
+    @property
     def rarity(self) -> CardRarity:
         return self.template.rarity
 
@@ -188,6 +196,19 @@ class Card(Entity, Generic[TTemplate]):
     def _reset(self) -> None:
         pass
 
+    def copy_exact_state_from(self, other: 'Card') -> None:
+        if not isinstance(other, Card):
+            raise TypeError(f"Expected Card, got {type(other).__name__}")
+
+        if self.template.id != other.template.id:
+            raise ValueError(f"Template ID mismatch: {self.template.id} != {other.template.id}")
+
+        self._base = replace(other._base) if other._base is not None else None
+        self.keywords = other.keywords
+        self.statuses = other.statuses.copy()
+        self.buffs = replace(other.buffs)
+        self.caught_card = replace(other.caught_card) if other.caught_card is not None else None
+
     def get_exact_copy_attrs(self) -> dict:
         return dict(
             type=self.type,
@@ -195,8 +216,8 @@ class Card(Entity, Generic[TTemplate]):
             controller_id=self.controller_id,
             keywords=self.keywords,
             statuses=self.statuses.copy(),
-            buffs=CardBuffs(**self.buffs.serialize()),
-            caught_card=CaughtCardData(**self.caught_card.serialize()) if self.caught_card is not None else None,
+            buffs=replace(self.buffs),
+            caught_card=replace(self.caught_card) if self.caught_card is not None else None,
         )
 
     def get_snapshot_attrs(self) -> dict:
@@ -416,6 +437,16 @@ class Monster(Card[MonsterTemplate]):
 
         if self.keywords & CardKeyword.CANDY:
             self.heal(3)
+
+    def copy_exact_state_from(self, other: 'Card') -> None:
+        if not isinstance(other, Monster):
+            raise TypeError(f"Expected Monster, got {type(other).__name__}")
+
+        super().copy_exact_state_from(other)
+
+        self.age = other.age
+        self.has_attacked = other.has_attacked
+        self.hp_missing = other.hp_missing
 
     def get_exact_copy_attrs(self) -> dict:
         return dict(

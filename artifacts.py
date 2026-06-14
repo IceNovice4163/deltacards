@@ -166,7 +166,7 @@ class Save(Artifact):
             if len(controller.board) < controller.board.MAX_CARDS:
                 yield Summon(target=CONTROLLER, card=NEXT_LOST_SOUL, attack=1, hp=1)
             else:
-                yield TriggerAbility(target=NEXT_LOST_SOUL, ability=MAGIC)  # TODO
+                yield TriggerAbility(target=NEXT_LOST_SOUL, ability=DUST)
 
     @on_event(MonsterKilledResult)
     def on_monster_killed(self, res: MonsterKilledResult, game: Game, **kwargs):

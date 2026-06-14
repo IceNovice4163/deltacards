@@ -1,6 +1,6 @@
 from action_results import AttackAftermathResult, MonsterSummonedResult
 from actions import *
-from cards import Monster, Spell, card
+from cards import CardBuffs, Monster, Spell, card
 from effects import Check, For, ForEach, StepResult
 from entity import Entity, on_event
 from enums import CardKeyword, CardStatusId, CardZone, DamageKind
@@ -1072,3 +1072,95 @@ def test_card_diamondboy1():
 
     rig.p2.play_spell(spell_2, target=dummy_with_armor)
     assert dummy_with_armor.hp == dummy_with_armor.base.hp - 1
+
+
+@card(379)
+class Crown(Spell):
+    # Give a monster +1/+2. If it's a C-Round, turn it into a K-Round instead. Draw a card.
+    targets = ALLY_MONSTERS | ENEMY_MONSTERS
+    magic = Check(TARGET.template_name == "C-Round").to(
+        TransformCard(target=TARGET, new_card=CARD_BY_NAME("K-Round") >> GENERATE()),
+        else_=Buff(target=TARGET, attack=+1, hp=+2),
+    )
+
+
+def test_card_crown():
+    rig = TestRig.create(p1_deck=[379, 379, 1, 378])
+
+    spell_1 = rig.p1.hand[0]
+    spell_2 = rig.p1.hand[1]
+    dummy = rig.p1.hand[2]
+    c_round = rig.p1.hand[3]
+
+    rig.p1.play_monster(dummy, slot=0)
+    rig.p1.play_monster(c_round, slot=3)
+
+    rig.p1.play_spell(spell_1, target=dummy)
+    assert rig.p1.board[0].template.name == "Dummy"
+    assert rig.p1.board[0].buffs.attack == 1
+    assert rig.p1.board[0].buffs.max_hp == 2
+
+    rig.p1.play_spell(spell_2, target=c_round)
+    assert rig.p1.board[3].template.name == "K-Round"
+    assert rig.p1.board[3].buffs.attack == 0
+    assert rig.p1.board[3].buffs.max_hp == 0
+
+
+@card(394)
+class MisterElegance(Monster):
+    # Magic: Switch: [Gain +1/+1 and Armor] or [Summon a copy of this].
+    magic = Switch(
+        left=Buff(target=SELF, attack=+1, hp=+1) >> AddKeyword(target=SELF, keyword=ARMOR),
+        right=Summon(card=SELF >> COPY(), controller=YOU),
+    )
+
+
+def test_card_misterelegance():
+    rig = TestRig.create(p1_deck=[394, 394])
+
+    rig.p1.play_monster(rig.p1.hand[0], slot=0)
+    assert sum(1 for m in rig.p1.board if m) == 1
+    assert rig.p1.board[0]
+    assert rig.p1.board[0].template.name == "Mister Elegance"
+    assert rig.p1.board[0].buffs.attack == 1
+    assert rig.p1.board[0].buffs.max_hp == 1
+    assert rig.p1.board[0].has_keyword(CardKeyword.ARMOR)
+
+    rig.p1.play_monster(rig.p1.hand[0], slot=3)
+    assert sum(1 for m in rig.p1.board if m) == 3
+    assert rig.p1.board[0]
+    assert rig.p1.board[1]
+    assert not rig.p1.board[2]
+    assert rig.p1.board[3]
+
+    for index in (3, 1):
+        assert rig.p1.board[index].template.name == "Mister Elegance"
+        assert not rig.p1.board[index].has_keyword(CardKeyword.ARMOR)
+
+    assert rig.p1.board[1].creator_id == rig.p1.board[3].id
+    assert rig.p1.board[1].creator_base_identity == ('card', 394)
+
+
+@card(442)
+class SandDog(Monster):
+    # Magic: Summon an exact copy of this.
+    magic = Summon(card=SELF >> EXACT_COPY(), controller=YOU)
+
+
+def test_card_sanddog():
+    rig = TestRig.create(p1_deck=[442])
+
+    rig.p1.hand[0].buff(cost=+1, attack=+2, hp=+3)
+    rig.p1.hand[0].add_keyword(CardKeyword.CHARGE)
+    rig.p1.hand[0].set_status(CardStatusId.PARALYZED, 2)
+
+    rig.p1.play_monster(rig.p1.hand[0])
+
+    for index in (0, 1):
+        assert rig.p1.board[index].template.name == "Sand Dog"
+        assert rig.p1.board[index].buffs == CardBuffs(cost=+1, attack=+2, max_hp=+3)
+        assert rig.p1.board[index].has_keyword(CardKeyword.CHARGE)
+        assert rig.p1.board[index].get_status(CardStatusId.PARALYZED) == 2
+
+    assert rig.p1.board[1].creator_id == rig.p1.board[0].id
+    assert rig.p1.board[1].creator_base_identity == ('card', 442)

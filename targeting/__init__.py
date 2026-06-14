@@ -109,6 +109,8 @@ from .transforms import (
     DISTINCT,
     SORT_BY,
     GENERATE,
+    COPY,
+    EXACT_COPY,
 )
 
 from .discovery import DISCOVER
@@ -124,6 +126,8 @@ from .macros import (
     Program,
     Switch,
     SwitchPiece,
+
+    NEXT_LOST_SOUL,
 )
 
 
@@ -230,6 +234,8 @@ __all__ = [
     'DISTINCT',
     'SORT_BY',
     'GENERATE',
+    'COPY',
+    'EXACT_COPY',
 
     # Discovery
     'DISCOVER',
@@ -244,4 +250,6 @@ __all__ = [
     'Program',
     'Switch',
     'SwitchPiece',
+
+    'NEXT_LOST_SOUL',
 ]

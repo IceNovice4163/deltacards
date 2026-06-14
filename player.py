@@ -44,9 +44,12 @@ class Player(Entity):
         self.fatigue_counter = 0
 
         self.tribes_played_this_turn: set[Tribe] = set()
+        self.turns_to_skip: int = 0
 
         self.game: 'Game' = None
         self.opponent: 'Player' = None
+
+        self.next_lost_soul: int | None = None
 
     def __str__(self):
         return f"Player {self.id}"
