@@ -1,12 +1,12 @@
-from action_results import AttackAftermathResult, MonsterSummonedResult
-from actions import *
-from cards import CardBuffs, Monster, Spell, card
-from effects import Check, For, ForEach, StepResult
-from entity import Entity, on_event
-from enums import CardKeyword, CardStatusId, CardZone, DamageKind
-from game import Game
-from modifiers import CostLayer, CostQuery, DamageLayer, DamageQuery, IntModifier, ModKind, StatLayer
-from targeting import *
+from deltacards.dsl.api import *
+from deltacards.engine.effects import StepResult
+from deltacards.engine.game import Game
+from deltacards.engine.modifiers import CostLayer, CostQuery, DamageLayer, DamageQuery, IntModifier, ModKind, StatLayer
+from deltacards.model.artifacts import Artifact, ArtifactRarity, artifact
+from deltacards.model.cards import CardBuffs, Monster, Spell, card
+from deltacards.model.entity import Entity, on_event
+from deltacards.model.enums import Ability, CardKeyword, CardStatusId, CardZone, DamageKind, PlayerId
+from deltacards.model.souls import Soul, soul
 from .rig import TestRig
 
 
@@ -621,6 +621,25 @@ def test_card_redwagon():
     assert rig.p1.hand[1].hp == rig.p1.hand[1].base.hp + 3
 
 
+@soul('determination')
+class Determination(Soul):
+    def __init__(self, id: int, controller_id: PlayerId):
+        super().__init__(id, controller_id)
+
+        self.extra_life = True
+
+    def game_start(self, ctx: 'ActionContext'):
+        controller = self._get_controller(ctx)
+        controller.next_lost_soul = 0
+
+    def on_would_die(self, entity: Entity, **kwargs):
+        if entity.id == self.controller_id and self.extra_life:
+            self.extra_life = False
+            return SetPlayerHP(player=entity, hp=5)
+
+        return None
+
+
 def test_soul_determination_death_prevention():
     rig = TestRig.create(soul_id='DETERMINATION', p1_deck=[1, 129, 1, 129])
     rig.p1.obj.hp = 1
@@ -727,6 +746,19 @@ def test_theheroine_death_prevention_failure():
     assert len(rig.p1.hand) == 1
 
 
+@artifact(11)
+class Preservation(Artifact):
+    name = "Preservation"
+    rarity = ArtifactRarity.COMMON
+    initial_counter = 7
+
+    def on_would_overdraw(self, player: 'Player', **kwargs):
+        if player.id == self.controller_id and self.counter >= 1:
+            return UpdateArtifactCounter(artifact=self, delta=-1)
+
+        return False
+
+
 def test_preservation_overdraw_prevention():
     rig = TestRig.create(p1_artifacts=[11], p1_deck=[83, 83, 83, 1], p2_deck=[83, 83, 83, 1])
 
@@ -799,6 +831,26 @@ def test_pippins():
     rig.p2.end_turn()
     assert [c.template.id for c in rig.p1.hand] == [1, 1, 288, 1, 288, 288, 288]
     assert len(rig.p1.deck) == 18
+
+
+@artifact(39)
+class Reverberation(Artifact):
+    name = "Reverberation"
+    rarity = ArtifactRarity.LEGENDARY
+
+    @on_event(MonsterSummonedResult)
+    def on_monster_summoned(self, res: MonsterSummonedResult, game: 'Game', **kwargs):
+        if not res.is_played:
+            return None
+
+        monster = game.entity(res.monster_id)
+        if monster.controller_id != self.controller_id:
+            return None
+
+        if not monster.has_ability(Ability.TURBO):
+            return None
+
+        return TriggerAbility(target=monster, ability=Ability.TURBO)
 
 
 def test_reverberation():

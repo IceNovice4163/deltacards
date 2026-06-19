@@ -2,14 +2,21 @@ import json
 from dataclasses import dataclass
 from typing import Sequence
 
-from cards import Card, LIBRARY, Monster, Spell
-from entity import Entity
-from enums import PlayerId
-from game import Game
-from player import Player
-from runner import EngineUpdate, GameRunner
-from schemas.requests import Attack, ChoiceResponse, EndTurn, MulliganResponse, PendingChoiceRequest, \
+from deltacards.model.enums import PlayerId
+from deltacards.engine.game import Game
+from deltacards.engine.runner import EngineUpdate, GameRunner
+from deltacards.model.cards import Card, LIBRARY, Monster, Spell
+from deltacards.model.entity import Entity
+from deltacards.model.player import Player
+from deltacards.model.requests import Attack, ChoiceResponse, EndTurn, MulliganResponse, PendingChoiceRequest, \
     PendingMulliganRequest, PendingPlayerActionRequest, PlayMonster, PlaySpell, PlayerActionResponse
+from deltacards.model.souls import Soul, soul
+
+
+@soul('empty_soul')
+class EmptySoul(Soul):
+    """Soul with no effects to simplify testing"""
+    pass
 
 
 def load():
