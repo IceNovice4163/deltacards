@@ -4,7 +4,9 @@ from deltacards.model.enums import (
     CardKeyword,
     CardRarity,
     CardStatusId,
+    CardToggleableAbility,
     CardType,
+    Expansion,
     Tribe,
 )
 
@@ -17,6 +19,10 @@ class CardTemplate:
     cost: int
     keywords: CardKeyword
     statuses: dict[CardStatusId, int]
+    active_abilities: set[CardToggleableAbility]
+    expansion: Expansion
+    tribes: tuple[Tribe, ...]
+    soul_id: int | None
 
     @property
     def base_identity(self) -> tuple[str, int]:
@@ -26,12 +32,20 @@ class CardTemplate:
     def type(self) -> CardType:
         raise NotImplementedError
 
+    def has_keyword(self, keyword: CardKeyword) -> bool:
+        return keyword in self.keywords
+
+    def get_status(self, status_id: CardStatusId) -> int:
+        return self.statuses.get(status_id, 0)
+
+    def has_tribe(self, tribe: Tribe) -> bool:
+        return (tribe in self.tribes) or (Tribe.ALL in self.tribes)
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class MonsterTemplate(CardTemplate):
     attack: int
     hp: int
-    tribes: tuple[Tribe, ...]
 
     @property
     def type(self) -> CardType:

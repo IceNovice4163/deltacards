@@ -1,5 +1,6 @@
 import random
 import types
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Generator, Sequence, TypeVar
 
@@ -10,11 +11,22 @@ from deltacards.actions.base import (
     ActionOutcome,
     evaluate_expr,
 )
-from deltacards.actions.results import ActionResult, EntityDamagedResult
-from deltacards.actions.standard import Kill
+from deltacards.actions.results import (
+    ActionResult,
+    AttackResolvedResult,
+    DodgeConsumedResult,
+    EntityDamagedResult,
+    MonsterSummonedResult,
+)
+from deltacards.actions.standard import (
+    Kill,
+    ReleaseMonsterDeathFinalization,
+    TriggerAbility,
+)
 from deltacards.dsl.core import NoTargetsError, TargetSelector
 from deltacards.dsl.vars import Var
-from deltacards.engine.effects import EffectBase, EffectStep, StepResult
+from deltacards.engine.action_log import ActionLogRecord
+from deltacards.engine.effects import EffectBase, EffectResult, EffectStep, StepResult
 from deltacards.engine.modifiers import DamageQuery, RulesEngine
 from deltacards.model.cards import Card, CardZone, Monster, Spell, create_card
 from deltacards.model.entity import Entity
@@ -67,6 +79,10 @@ class PendingAction:
     pre_handlers_done: bool = False
     send_value: Any | None = None
     step_group_id: int | None = None
+
+    log_group_id: int | None = None
+    log_parent_id: int | None = None
+    log_depth: int = 0
 
 
 @dataclass(slots=True)
@@ -133,17 +149,28 @@ class Game:
 
         self.turn = 1
         self.turn_player: Player = None
-        self.log: list[Any] = []
+        self.action_log: list[ActionLogRecord] = []
+        self.log: list[ActionResult] = []
+        self.log_by_type: dict[type[ActionResult], list[ActionResult]] = defaultdict(list)
         self.scheduled_effects: list[ScheduledEffect] = []
         self.stack: list[Card] = []
         self.resolution_stack: list[PendingAction] = []
         self.pending_requests: dict[int, 'PendingRequest'] = {}
         self.rules = RulesEngine(self)
 
+        self._next_action_log_id = 1
+        self._next_action_log_group_id = 1
         self._next_action_result_id = 1
 
     def player(self, player_id: PlayerId) -> Player:
         return self.players[player_id]
+
+    def card(self, target_id: int) -> Card:
+        entity = self.entities[target_id]
+        if not isinstance(entity, Card):
+            raise TypeError(f"Entity with ID {target_id} is not a card: {repr(entity)}")
+
+        return entity
 
     def entity(self, target_id: PlayerId | int) -> Entity:
         if target_id in self.players:
@@ -170,6 +197,16 @@ class Game:
         rid = self.next_request_id
         self.next_request_id += 1
         return rid
+
+    def alloc_action_log_id(self) -> int:
+        value = self._next_action_log_id
+        self._next_action_log_id += 1
+        return value
+
+    def alloc_action_log_group_id(self) -> int:
+        value = self._next_action_log_group_id
+        self._next_action_log_group_id += 1
+        return value
 
     def register_entity(self, entity: Entity, entity_id: int):
         self.entities[entity_id] = entity
@@ -298,7 +335,7 @@ class Game:
                 controller.deck.add(card, pos=0)
             elif pos == 'bottom':
                 controller.deck.add(card, pos=len(controller.deck))
-            else:
+            elif not isinstance(pos, int):
                 raise RuntimeError(f"Invalid deck position: {pos}")
 
             if isinstance(pos, int):
@@ -326,9 +363,101 @@ class Game:
         zone: CardZone,
         pos: int | str | None = None,
     ):
+        # Cards aren't allowed to be moved from ERASED zone
+        if card.zone is CardZone.ERASED:
+            if zone is CardZone.ERASED and controller_id == card.controller_id:
+                return
+
+            raise RuntimeError(f"Illegal move from ERASED: {card!r}")
+
+        # Dustpile monsters can only be erased
+        if card.zone is CardZone.DUSTPILE:
+            if zone is not CardZone.ERASED:
+                raise RuntimeError(f"Illegal move from DUSTPILE: {card!r}")
+
+            if controller_id != card.controller_id:
+                raise RuntimeError(
+                    f"Illegal control change while moving from DUSTPILE: {card!r}, "
+                    f"old_controller={card.controller_id}, new_controller={controller_id}"
+                )
+
+        if zone is CardZone.DUSTPILE and not isinstance(card, Monster):
+            raise RuntimeError(f"Only monsters can be moved to DUSTPILE: {card!r}")
+
         self.remove_card_from_current_zone(card)
         self.add_card_to_zone(card, controller_id, zone, pos=pos)
         self.rules.invalidate()
+
+    def hold_monster_death_finalization(self, monster: Monster) -> None:
+        monster.death_finalization_locks += 1
+
+    def release_monster_death_finalization(self, monster: Monster) -> bool:
+        if monster.death_finalization_locks <= 0:
+            raise RuntimeError(f"`Game.release_monster_death_finalization()` called without a hold: {monster!r}")
+
+        monster.death_finalization_locks -= 1
+
+        if monster.death_finalization_locks == 0 and monster.death_pending:
+            return self.finalize_monster_death(monster)
+
+        return False
+
+    def move_monster_to_pending_death_state(self, monster: Monster) -> None:
+        """
+        Remove a killed monster from board without resetting runtime state.
+
+        The monster becomes temporary placed in `CardZone.INVALID`.
+        Abilities such as Dust can still use `SELF` to read its stats, buffs, caught-card data, etc.
+        """
+        if monster.zone is not CardZone.BOARD:
+            raise RuntimeError(f"Invalid move to pending death: {monster!r}")
+
+        if monster.pos is None:
+            raise RuntimeError(f"Invalid board position: {monster.pos}")
+
+        if monster.death_finalization_locks <= 0:
+            raise RuntimeError(f"Monster has no death finalization locks: {monster!r}")
+
+        controller = self.players[monster.controller_id]
+
+        if controller.board[monster.pos] is not monster:
+            raise RuntimeError("Board position mismatch")
+
+        controller.board[monster.pos] = None
+        monster.pos = None
+
+        monster._zone = CardZone.INVALID
+
+        monster.marked_for_destruction = True
+        monster.death_pending = True
+
+        self.rules.invalidate()
+
+    def finalize_monster_death(self, monster: Monster) -> bool:
+        """Finish death processing for a monster."""
+        if not monster.death_pending:
+            return False
+
+        if monster.death_finalization_locks > 0:
+            return False
+
+        monster.marked_for_destruction = False
+        monster.death_pending = False
+
+        # If it's still in `CardZone.INVALID`, reset it and move it to dustpile
+        if monster.zone is CardZone.INVALID:
+            monster._reset()
+            self.move_card(monster, monster.controller_id, CardZone.DUSTPILE)
+            return True
+
+        if monster.zone is CardZone.ERASED:
+            monster._reset()
+            self.rules.invalidate()
+            return True
+
+        # If a monster was moved somewhere else by an effect, do not reset it
+        self.rules.invalidate()
+        return False
 
     # --------------------------
     # Target & choice filtering
@@ -352,6 +481,25 @@ class Game:
 
         return res
 
+    @staticmethod
+    def resolve_summon_position(
+        controller: Player,
+        pos: int | None,
+    ) -> tuple[bool, int | None, str]:
+        if pos is None:
+            try:
+                return True, controller.board.get_empty_slot_index(), 'ok'
+            except StopIteration:
+                return False, None, 'board_full'
+
+        if not (0 <= pos < controller.board.MAX_CARDS):
+            return False, None, 'invalid_slot'
+
+        if controller.board[pos] is not None:
+            return False, None, 'slot_occupied'
+
+        return True, pos, 'ok'
+
     def play_target_options(self, card: Card, player: Player, pos: int | None = None) -> list[Entity]:
         """Evaluate `card.targets` into concrete selectable entities for on-play targeting."""
         selector = card.targets
@@ -360,6 +508,13 @@ class Game:
 
         ctx = ActionContext(game=self, source=card)
         options = selector.eval(ctx=ctx, pos=pos, player=player)
+
+        # Remove the card that's being played from available choices
+        for index, x in enumerate(options):
+            if x.id == card.id:
+                del options[index]
+                break
+
         return self._filter_player_choice_options(options, for_spell_targeting=isinstance(card, Spell))
 
     def can_play_from_hand(self, player: Player, card_id: int, pos: int | None = None) -> tuple[bool, str]:
@@ -379,18 +534,8 @@ class Game:
             return False, 'insufficient_gold'
 
         if isinstance(card, Monster):
-            if pos is None:
-                if len(player.board) == 4:
-                    return False, 'board_full'
-
-                return True, 'ok'
-
-            if not (0 <= pos < player.board.MAX_CARDS):
-                return False, 'invalid_slot'
-            if player.board[pos] is not None:
-                return False, 'slot_occupied'
-
-            return True, 'ok'
+            ok, _, reason = self.resolve_summon_position(player, pos)
+            return ok, reason
 
         # Spells: must have a valid target (if they require on-play targets)
         if isinstance(card, Spell):
@@ -427,37 +572,39 @@ class Game:
         if attacker.has_attacked:
             return False, 'already_attacked_this_turn'
 
-        if attacker.keywords & CardKeyword.DISARMED:
+        if attacker.has_keyword(CardKeyword.DISARMED):
             return False, 'cannot_attack'
 
         if attacker.get_status(CardStatusId.PARALYZED) > 0:
             return False, 'cannot_attack'
 
-        if attacker.age == 0 and not (attacker.keywords & CardKeyword.CHARGE):
+        if attacker.age == 0 and not (
+            attacker.has_keyword(CardKeyword.CHARGE)
+            or attacker.has_keyword(CardKeyword.HASTE)
+        ):
             return False, 'cannot_attack'
 
         if isinstance(defender, Player):
-            if attacker.keywords & CardKeyword.HASTE:
+            if attacker.has_keyword(CardKeyword.HASTE) and not attacker.has_keyword(CardKeyword.CHARGE):
                 return False, 'cannot_attack'
 
-            defender_board = defender.board
-
         elif isinstance(defender, Monster):
-            defender_board = self.players[defender.controller_id].board
             if defender.zone is not CardZone.BOARD:
                 return False, 'defender_not_on_board'
-
-            if defender.has_keyword(CardKeyword.TAUNT):
-                return True, 'ok'
 
         else:
             return False, 'invalid_defender_id'
 
-        for monster in defender_board.cards:
-            if monster.has_keyword(CardKeyword.TAUNT):
+        if initiated_by_player:
+            if attacker.controller_id != initiated_by_player.id:
+                return False, 'invalid_attacker_id'
+
+            if isinstance(defender, Monster) and defender.has_keyword(CardKeyword.TRANSPARENCY):
                 return False, 'invalid_defender_id'
 
-        if initiated_by_player:
+            if defender.controller_id == attacker.controller_id:
+                return False, 'invalid_defender_id'
+
             enemy_monsters = self._filter_player_choice_options(initiated_by_player.opponent.board.cards)
             taunts = [
                 monster for monster in enemy_monsters
@@ -472,10 +619,11 @@ class Game:
         yield from player.board.cards
 
         if not board_only:
+            yield from player.hand.cards
             if player.soul is not None:
                 yield player.soul
             if player.artifacts:
-                yield from player.artifacts
+                yield from [artifact for artifact in player.artifacts if artifact.active]
 
     def _iter_event_sources(self):
         for player in (self.turn_player, self.turn_player.opponent):
@@ -495,7 +643,23 @@ class Game:
 
     def _collect_result_handlers(self, res: ActionResult) -> list[tuple[Entity, Action]]:
         actions = []
-        for entity in self._iter_event_sources():
+        event_sources = list(self._iter_event_sources())
+
+        if isinstance(res, AttackResolvedResult):
+            # Attacker and defender should be able to handle `AttackResolvedResult` even if they left the board
+            attacker = self.entity(res.attacker_id)
+            if attacker not in event_sources:
+                event_sources.append(attacker)
+
+            defender = self.entity(res.defender_id)
+            if defender not in event_sources:
+                event_sources.append(defender)
+
+        for entity in event_sources:
+            # Monster shouldn't receive `MonsterSummonedResult` event on its own summon
+            if isinstance(res, MonsterSummonedResult) and entity.id == res.monster_id:
+                continue
+
             event_handlers = entity.post_event_handlers
             for res_class, event_handler in event_handlers.items():
                 if isinstance(res, res_class):
@@ -515,14 +679,11 @@ class Game:
             r.turn_player_id = self.turn_player.id
 
             self.log.append(r)
+            self.log_by_type.setdefault(type(r), []).append(r)
+
             handlers.extend(self._collect_result_handlers(r))
 
         return handlers
-
-    # def _eval_value(self, x, ctx: ActionContext, entity=None, **kwargs) -> int:
-    #     if isinstance(x, ValueExpr):
-    #         return x.eval(ctx=ctx, entity=entity, **kwargs)
-    #     return int(x)
 
     def _eval_entities(self, x, ctx: ActionContext, **kwargs) -> list[Entity]:
         if x is None:
@@ -556,6 +717,44 @@ class Game:
         raise TypeError(f"Expected Entity/list/tuple/selector, got {type(x).__name__}: {x!r}")
 
     # --------------------
+    # Ability listeners
+    # --------------------
+
+    def collect_ability_listener_effects(self, ability: Ability, player: Player, board_only: bool = False):
+        for entity in self._iter_event_sources_of_player(player, board_only=board_only):
+            effect = entity.get_ability(ability)
+            if effect is None:
+                continue
+
+            yield effect, entity
+
+    def card_need_fulfilled(self, card: Card) -> bool:
+        condition = card.get_need_condition()
+        if condition is None:
+            return False
+
+        return bool(
+            evaluate_expr(
+                condition,
+                ctx=ActionContext(game=self, source=card),
+            )
+        )
+
+    # --------------------
+    # Scheduled effects
+    # --------------------
+
+    def schedule_effect(self, entity_id: int, name: str, ctx: ActionContext) -> None:
+        self.scheduled_effects.append(
+            ScheduledEffect(
+                entity_id=entity_id,
+                name=name,
+                env=ctx.env.copy(),
+                vars=ctx.vars.copy(),
+            )
+        )
+
+    # --------------------
     # Effect Queue API
     # --------------------
 
@@ -566,10 +765,16 @@ class Game:
         source: Entity,
         env: dict[str, Any] | None = None,
         ctx: ActionContext | None = None,
+        log_group_id: int | None = None,
+        log_parent_id: int | None = None,
+        log_depth: int = 0,
         **kwargs,
     ) -> None:
         if actions is None:
             return
+
+        if log_group_id is None:
+            log_group_id = self.alloc_action_log_group_id()
 
         if isinstance(actions, (list, tuple)):
             for action in reversed(actions):
@@ -578,6 +783,9 @@ class Game:
                     source=source,
                     env=env,
                     ctx=ctx,
+                    log_group_id=log_group_id,
+                    log_parent_id=log_parent_id,
+                    log_depth=log_depth,
                     **kwargs,
                 )
 
@@ -589,6 +797,9 @@ class Game:
             kwargs=kwargs.copy(),
             env=dict(env or {}),
             ctx=ctx,
+            log_group_id=log_group_id,
+            log_parent_id=log_parent_id,
+            log_depth=log_depth,
         )
         self.resolution_stack.append(pending)
 
@@ -603,7 +814,7 @@ class Game:
         ctx: ActionContext,
         step: EffectStep,
     ) -> None:
-        actions = step.actions
+        items = step.items
         step_kwargs = step.kwargs.copy()
 
         resume_pending = PendingAction(
@@ -614,11 +825,18 @@ class Game:
             ctx=ctx,
             pre_handlers_done=True,
             send_value=None,
-            step_group_id=None,
+
+            # Preserve parent group if this generator/effect is itself being
+            # awaited by an outer generator/effect.
+            step_group_id=base_pending.step_group_id,
+
+            log_group_id=base_pending.log_group_id,
+            log_parent_id=base_pending.log_parent_id,
+            log_depth=base_pending.log_depth,
         )
 
-        if not actions:
-            # If step contains no actions, immediately resume with an empty success list.
+        if not items:
+            # If step contains no items, immediately resume with an empty success list.
             resume_pending.send_value = StepResult([])
             self.resolution_stack.append(resume_pending)
             return
@@ -628,13 +846,13 @@ class Game:
 
         self._step_groups[group_id] = StepGroup(
             waiting_coroutine=resume_pending,
-            remaining=len(actions),
+            remaining=len(items),
             successes=[],
         )
 
         pendings = [
             PendingAction(
-                action=action,
+                action=item,
                 source=base_pending.source,
                 kwargs=step_kwargs,
                 env=base_pending.env.copy(),
@@ -642,8 +860,11 @@ class Game:
                 pre_handlers_done=False,
                 send_value=None,
                 step_group_id=group_id,
+                log_group_id=base_pending.log_group_id,
+                log_parent_id=base_pending.log_parent_id,
+                log_depth=base_pending.log_depth,
             )
-            for action in actions
+            for item in items
         ]
 
         for pending in reversed([*pendings, resume_pending]):
@@ -729,6 +950,9 @@ class Game:
                     pre_handlers_done=pending.pre_handlers_done,
                     send_value=None,
                     step_group_id=pending.step_group_id,
+                    log_group_id=pending.log_group_id,
+                    log_parent_id=pending.log_parent_id,
+                    log_depth=pending.log_depth,
                 )
             )
 
@@ -738,21 +962,29 @@ class Game:
         if isinstance(yielded, EffectStep):
             return yielded
 
-        if isinstance(yielded, Action):
+        if isinstance(yielded, (Action, EffectBase)):
             return EffectStep([yielded], kwargs=pending.kwargs.copy())
 
-        if isinstance(yielded, (list, tuple)):
-            actions = []
-            for action in yielded:
-                assert isinstance(action, Action), repr(action)
-                actions.append(action)
-
-            return EffectStep(actions, kwargs=pending.kwargs.copy())
-
         raise TypeError(
-            'Custom effect generators may only yield Action, list[Action], tuple[Action], or EffectStep; '
+            'Custom effect generators may only yield Action, EffectBase, or EffectStep; '
             f'got {type(yielded).__name__}: {yielded!r}'
         )
+
+    def _generator_return_to_step_results(self, value: Any) -> tuple[bool, tuple[ActionResult, ...]]:
+        """
+        Convert a finished generator/effect return value into the success/results
+        reported to the parent StepGroup.
+
+        Normal custom generators usually return None.
+        EffectBase generators return EffectResult.
+        """
+        if isinstance(value, (EffectResult, StepResult)):
+            return value.success, value.results
+
+        if isinstance(value, bool):
+            return value, ()
+
+        return True, ()
 
     def _resolve_generator(self, pending: PendingAction, ctx: ActionContext) -> list[ActionResult]:
         generator = pending.action
@@ -764,7 +996,12 @@ class Game:
 
         try:
             yielded = generator.send(send_value) if send_value is not None else next(generator)
-        except StopIteration:
+
+        except StopIteration as stop:
+            if pending.step_group_id is not None:
+                success, results = self._generator_return_to_step_results(stop.value)
+                self._finish_step_action(pending, success=success, results=results)
+
             return []
 
         # Custom generators use the same step/resume protocol as `EffectBase`:
@@ -780,22 +1017,33 @@ class Game:
     def _enqueue_effect_calls(
         self,
         effects: Sequence[tuple[Entity, Any]],
+        *,
         env: dict[str, Any],
         kwargs: dict[str, Any],
+        log_group_id: int,
+        log_parent_id: int,
+        log_depth: int,
     ) -> None:
         for entity, effect in reversed(effects):
             self.enqueue_actions(
                 effect,
                 source=entity,
-                ctx=None,
                 env=env.copy(),
+                ctx=None,
+                log_group_id=log_group_id,
+                log_parent_id=log_parent_id,
+                log_depth=log_depth,
                 **kwargs,
             )
 
     def _enqueue_action_calls(
         self,
         action_calls: Sequence[ActionCall],
+        *,
         env: dict[str, Any],
+        log_group_id: int,
+        log_parent_id: int,
+        log_depth: int,
     ) -> None:
         for call in reversed(action_calls):
             merged_env = env.copy()
@@ -804,8 +1052,11 @@ class Game:
             self.enqueue_actions(
                 call.action,
                 source=call.source,
-                ctx=ActionContext(game=self, source=call.source, vars=call.vars),
                 env=merged_env,
+                ctx=ActionContext(game=self, source=call.source, vars=call.vars),
+                log_group_id=log_group_id,
+                log_parent_id=log_parent_id,
+                log_depth=log_depth,
                 **call.kwargs,
             )
 
@@ -848,7 +1099,7 @@ class Game:
         for p in self.players.values():
             for m in p.board.cards:
                 if m.hp <= 0 and not m.marked_for_destruction:
-                    print(f"Clamp hp for {m}: {m.hp} => 1")
+                    # print(f"Clamp hp for {m}: {m.hp} => 1")
                     m.buff(hp=1 - m.hp)
 
     # -------------------------
@@ -901,10 +1152,25 @@ class Game:
 
                 return []
 
+        if pending.log_group_id is None:
+            pending.log_group_id = self.alloc_action_log_group_id()
+
         # Execute the atomic action
         res = action.execute(ctx=ctx, **resolved_args)
         if not isinstance(res, ActionOutcome):
             raise TypeError(f'{type(action).__name__}.execute() must return ActionOutcome, got {type(res).__name__}')
+
+        action_log_id = self.alloc_action_log_id()
+        self.action_log.append(
+            ActionLogRecord(
+                id=action_log_id,
+                action_name=type(action).__name__,
+                results=tuple(res.results),
+                group_id=pending.log_group_id,
+                parent_id=pending.log_parent_id,
+                depth=pending.log_depth,
+            )
+        )
 
         # If this atomic action belonged to a `StepGroup`, update its state.
         self._finish_step_action(pending, success=res.success, results=res.results)
@@ -918,23 +1184,232 @@ class Game:
             self.pending_requests[req.request_id] = req
             return list(res.results)
 
+        # Enqueue action-requested follow-ups & triggers.
+        if res.action_calls:
+            self._enqueue_action_calls(
+                res.action_calls,
+                env=pending.env,
+                log_group_id=pending.log_group_id,
+                log_parent_id=action_log_id,
+                log_depth=pending.log_depth + 1,
+            )
+
         # Run handlers that should run right after the atomic action resolves (e.g. "after this attacks, do ...").
         result_handlers = self._record_action_results(res.results)
         if result_handlers:
-            self._enqueue_effect_calls(result_handlers, env=pending.env, kwargs=pending.kwargs)
-
-        # Enqueue action-requested follow-ups & triggers.
-        if res.action_calls:
-            self._enqueue_action_calls(res.action_calls, env=pending.env)
+            self._enqueue_effect_calls(
+                result_handlers,
+                env=pending.env,
+                kwargs=pending.kwargs,
+                log_group_id=pending.log_group_id,
+                log_parent_id=action_log_id,
+                log_depth=pending.log_depth + 1,
+            )
 
         # Handle state-based actions after every atomic action resolution.
         self._handle_state_based_actions()
 
         return list(res.results)
 
-    # TODO
     # --------------------
-    # Other
+    # Replacement effects
+    # --------------------
+
+    def check_death_prevented(self, target: Monster | Player, killer: Entity) -> tuple[bool, list[ActionCall]]:
+        death_prevented = False
+        extra_actions = []
+
+        for entity in self._iter_event_sources():
+            if getattr(entity, 'on_would_die', None) is not None:
+                replacement_effects = entity.on_would_die(target, game=self)
+                if replacement_effects:
+                    death_prevented = True
+                    extra_actions.append(
+                        ActionCall(
+                            replacement_effects,
+                            source=entity,
+                        )
+                    )
+                    break
+
+        if not death_prevented:
+            extra_actions.append(
+                ActionCall(
+                    Kill(target=target, killer=killer, skip_check_death_prevented=True),
+                    source=killer,
+                )
+            )
+
+        if isinstance(target, Monster):
+            # Monsters are marked for destruction even if their death was prevented.
+            # This flag must be set back to False by a death replacement effect later.
+            target.marked_for_destruction = True
+
+        return death_prevented, extra_actions
+
+    def check_overdraw_prevented(self, player: Player) -> tuple[bool, list[ActionCall]]:
+        for entity in self._iter_event_sources():
+            if getattr(entity, 'on_would_overdraw', None) is not None:
+                replacement_effects = entity.on_would_overdraw(player, game=self)
+                if replacement_effects:
+                    return True, [ActionCall(replacement_effects, source=entity)]
+
+        return False, []
+
+    # --------------------
+    # Damage
+    # --------------------
+
+    def apply_damage(
+        self,
+        target: Monster | Player,
+        damage: int,
+        source: Entity,
+        kind: DamageKind | None,
+        *,
+        combat_attacker: Monster | None = None,
+        combat_defender: Entity | None = None,
+    ) -> DamageApplyResult:
+        if damage <= 0:
+            return DamageApplyResult(prevented_by='zero')
+
+        if kind is None:
+            if isinstance(source, Spell):
+                kind = DamageKind.SPELL
+            else:
+                kind = DamageKind.ABILITY
+
+        if not isinstance(target, (Monster, Player)):
+            return DamageApplyResult(prevented_by='invalid_target')
+
+        if isinstance(target, Monster):
+            if target.marked_for_destruction:
+                return DamageApplyResult(prevented_by='invalid_target')
+
+            if target.zone is not CardZone.BOARD:
+                return DamageApplyResult(prevented_by='invalid_target')
+
+            if target.has_keyword(CardKeyword.INVULNERABLE):
+                return DamageApplyResult(prevented_by='invulnerable')
+
+            if target.has_keyword(CardKeyword.DARKSPAWN) and isinstance(source, Spell):
+                return DamageApplyResult(prevented_by='darkspawn')
+
+        q = DamageQuery(
+            game=self,
+            source=source,
+            target=target,
+            amount=damage,
+            kind=kind,
+            combat_attacker=combat_attacker,
+            combat_defender=combat_defender,
+        )
+        damage = self.rules.damage(q)
+
+        if isinstance(target, Monster) and target.has_keyword(CardKeyword.ARMOR):
+            damage -= 1
+
+        if damage <= 0:
+            return DamageApplyResult(prevented_by='reduced_to_zero')
+
+        if isinstance(target, Player):
+            target.hp = target.hp - damage
+
+            if target.hp <= 0:
+                death_prevented, extra_actions = self.check_death_prevented(target, source)
+            else:
+                death_prevented = False
+                extra_actions = []
+
+            killed = target.hp <= 0 and not death_prevented
+
+            return DamageApplyResult(
+                damage=damage,
+                killed=killed,
+                results=[
+                    EntityDamagedResult(
+                        source_id=source.id,
+                        target_id=target.id,
+                        target=target.to_snapshot(),
+                        amount=damage,
+                        killed=killed,
+                        excess_damage=0,
+                        kind=kind,
+                    ),
+                ],
+                extra_actions=extra_actions,
+            )
+
+        dodge_counters = target.get_status(CardStatusId.DODGE)
+        if dodge_counters >= 1:
+            target.set_status(CardStatusId.DODGE, dodge_counters - 1)
+            return DamageApplyResult(
+                prevented_by='dodge',
+                results=[
+                    DodgeConsumedResult(
+                        source_id=source.id,
+                        monster_id=target.id,
+                        monster=target.to_snapshot(),
+                    ),
+                ],
+            )
+
+        hp_before = target.hp
+        target.hp_missing += damage
+        excess_damage = max(damage - hp_before, 0)
+
+        if target.hp <= 0:
+            death_prevented, extra_actions = self.check_death_prevented(target, source)
+        else:
+            death_prevented = False
+            extra_actions = []
+
+        killed = target.hp <= 0 and not death_prevented
+        damage_result = EntityDamagedResult(
+            source_id=source.id,
+            target_id=target.id,
+            target=target.to_snapshot(),
+            amount=damage,
+            killed=killed,
+            excess_damage=excess_damage,
+            kind=kind,
+        )
+
+        # Bullseye: If this entity brings a monster to exactly 0 HP, trigger this effect.
+        if killed and excess_damage == 0:
+            effect = source.get_ability(Ability.BULLSEYE)
+            if effect is not None:
+                if isinstance(source, Monster):
+                    self.hold_monster_death_finalization(source)
+
+                extra_actions.append(
+                    ActionCall(
+                        TriggerAbility(target=source, ability=Ability.BULLSEYE),
+                        source=source,
+                        env={'target': target.to_snapshot(), 'result': damage_result},
+                    )
+                )
+
+                if isinstance(source, Monster):
+                    extra_actions.append(
+                        ActionCall(
+                            ReleaseMonsterDeathFinalization(target=source),
+                            source=source,
+                        )
+                    )
+
+        self.rules.invalidate()
+
+        return DamageApplyResult(
+            damage=damage,
+            excess_damage=excess_damage,
+            killed=killed,
+            results=[damage_result],
+            extra_actions=extra_actions,
+        )
+
+    # --------------------
+    # Debug
     # --------------------
 
     def check_invariants(self) -> None:
@@ -961,7 +1436,7 @@ class Game:
 
             # Zone must match container
             if expected_zone is not None:
-                assert c.zone == expected_zone, (
+                assert c.zone is expected_zone, (
                     f"{location}: card.zone mismatch: expected {expected_zone}, got {c.zone}"
                 )
 
@@ -986,6 +1461,11 @@ class Game:
         def _check_container(p: Player, attr_name: str, expected_zone: CardZone) -> None:
             container = getattr(p, attr_name)
             for i, c in enumerate(container.cards):
+                if attr_name == 'dustpile':
+                    assert isinstance(c, Monster), (
+                        f"P{player.id.value}'s dustpile: expected Monster, got {type(c).__name__}"
+                    )
+
                 _register(
                     c,
                     location=f'P{p.id.value}.{attr_name}[{i}]',
@@ -1022,196 +1502,12 @@ class Game:
                 expected_pos=None,
             )
 
+        if len(self.resolution_stack) == 0:
+            assert self._step_groups == {}
+
         for pending in self.resolution_stack:
             if pending.step_group_id is not None:
                 assert pending.step_group_id in self._step_groups
 
         for group_id, group in self._step_groups.items():
             assert group.remaining >= 0
-
-    def collect_ability_listener_effects(self, ability: Ability, player: Player, board_only: bool = False):
-        for entity in self._iter_event_sources_of_player(player, board_only=board_only):
-            effect = entity.get_ability(ability)
-            if effect is None:
-                continue
-
-            yield effect, entity
-
-    def check_death_prevented(self, target: Monster | Player, killer: Entity) -> tuple[bool, list[ActionCall]]:
-        death_prevented = False
-        extra_actions = []
-
-        for entity in self._iter_event_sources():
-            if getattr(entity, 'on_would_die', None) is not None:
-                replacement_effects = entity.on_would_die(target, game=self)
-                if replacement_effects:
-                    death_prevented = True
-                    self.enqueue_actions(
-                        replacement_effects,
-                        source=entity,
-                    )
-                    break
-
-        if not death_prevented:
-            extra_actions.append(
-                ActionCall(
-                    Kill(target=target, killer=killer, skip_check_death_prevented=True),
-                    source=killer,
-                )
-            )
-
-        if isinstance(target, Monster):
-            # Monsters are marked for destruction even if their death was prevented.
-            # This flag must be set back to False by a death replacement effect later.
-            target.marked_for_destruction = True
-
-        return death_prevented, extra_actions
-
-    def check_overdraw_prevented(self, player: Player) -> bool:
-        for entity in self._iter_event_sources():
-            if getattr(entity, 'on_would_overdraw', None) is not None:
-                replacement_effects = entity.on_would_overdraw(player, game=self)
-                if replacement_effects:
-                    self.enqueue_actions(
-                        replacement_effects,
-                        source=entity,
-                    )
-                    return True
-
-        return False
-
-    def apply_damage(
-        self,
-        target: Monster | Player,
-        damage: int,
-        source: Entity,
-        kind: DamageKind | None,
-        *,
-        combat_attacker: Monster | None = None,
-        combat_defender: Entity | None = None,
-    ) -> DamageApplyResult:
-        if damage <= 0:
-            return DamageApplyResult(prevented_by='zero')
-
-        if kind is None:
-            if isinstance(source, Monster):
-                kind = DamageKind.ABILITY
-            elif isinstance(source, Spell):
-                kind = DamageKind.SPELL
-
-        if not isinstance(target, (Monster, Player)):
-            return DamageApplyResult(prevented_by='invalid_target')
-
-        if isinstance(target, Monster):
-            if target.marked_for_destruction:
-                return DamageApplyResult(prevented_by='invalid_target')
-
-            if target.zone != CardZone.BOARD:
-                return DamageApplyResult(prevented_by='invalid_target')
-
-            if target.has_keyword(CardKeyword.INVULNERABLE):
-                return DamageApplyResult(prevented_by='invulnerable')
-
-            if target.has_keyword(CardKeyword.DARKSPAWN) and isinstance(source, Spell):
-                return DamageApplyResult(prevented_by='darkspawn')
-
-        q = DamageQuery(
-            game=self,
-            source=source,
-            target=target,
-            amount=damage,
-            kind=kind,
-            combat_attacker=combat_attacker,
-            combat_defender=combat_defender,
-        )
-        damage = self.rules.damage(q)
-
-        if isinstance(target, Monster) and target.has_keyword(CardKeyword.ARMOR):
-            damage -= 1
-
-        if damage <= 0:
-            return DamageApplyResult(prevented_by='reduced_to_zero')
-
-        if isinstance(target, Player):
-            target.hp = max(target.hp - damage, 0)
-
-            if target.hp <= 0:
-                death_prevented, extra_actions = self.check_death_prevented(target, source)
-            else:
-                death_prevented = False
-                extra_actions = []
-
-            killed = target.hp <= 0 and not death_prevented
-
-            return DamageApplyResult(
-                damage=damage,
-                killed=killed,
-                results=[
-                    EntityDamagedResult(
-                        source_id=source.id,
-                        target_id=target.id,
-                        target=target.to_snapshot(),
-                        amount=damage,
-                        killed=killed,
-                        excess_damage=0,
-                        kind=kind,
-                    ),
-                ],
-                extra_actions=extra_actions,
-            )
-
-        dodge_counters = target.get_status(CardStatusId.DODGE)
-        if dodge_counters >= 1:
-            target.set_status(CardStatusId.DODGE, dodge_counters - 1)
-            return DamageApplyResult(prevented_by='dodge')  # TODO add DodgeConsumedResult
-
-        hp_before = target.hp
-        target.hp_missing += damage
-        excess_damage = max(damage - hp_before, 0)
-
-        if target.hp <= 0:
-            death_prevented, extra_actions = self.check_death_prevented(target, source)
-
-            # Bullseye: If this entity brings a monster to exactly 0 HP, trigger this effect.
-            if excess_damage == 0 and not death_prevented:
-                effect = source.get_ability(Ability.BULLSEYE)
-                if effect is not None:
-                    extra_actions.append(
-                        ActionCall(effect, source=source),
-                    )
-
-        else:
-            death_prevented = False
-            extra_actions = []
-
-        killed = target.hp <= 0 and not death_prevented
-
-        self.rules.invalidate()
-
-        return DamageApplyResult(
-            damage=damage,
-            excess_damage=excess_damage,
-            killed=killed,
-            results=[
-                EntityDamagedResult(
-                    source_id=source.id,
-                    target_id=target.id,
-                    target=target.to_snapshot(),
-                    amount=damage,
-                    killed=killed,
-                    excess_damage=excess_damage,
-                    kind=kind,
-                ),
-            ],
-            extra_actions=extra_actions,
-        )
-
-    def schedule_effect(self, entity_id: int, name: str, ctx: ActionContext) -> None:
-        self.scheduled_effects.append(
-            ScheduledEffect(
-                entity_id=entity_id,
-                name=name,
-                env=ctx.env.copy(),
-                vars=ctx.vars.copy(),
-            )
-        )

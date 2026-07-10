@@ -1,4 +1,4 @@
-from typing import Any, Sequence, TYPE_CHECKING
+from typing import Sequence, TYPE_CHECKING
 
 from deltacards.engine.constants import GOLD_GAINS
 from deltacards.model.containers import Board, CardContainer, Deck
@@ -19,14 +19,13 @@ class Player(Entity):
         deck: Sequence[int],
         soul_id: str,
         artifact_ids: Sequence[int],
-        is_first_turn: bool,
     ):
         self.id = player_id
 
         self.starting_deck_card_ids = deck
         self.starting_soul_id = soul_id.lower()
         self.starting_artifact_ids = artifact_ids
-        self.is_first_turn = is_first_turn
+        self.is_first_turn: bool = None
 
         self.soul: 'Soul' = None
         self.artifacts: list['Artifact'] = None
@@ -38,7 +37,7 @@ class Player(Entity):
         self.erased = CardContainer()
 
         self.turn = 0
-        self.gold = 10
+        self.gold = 0
         self.hp = 30
         self.max_hp = 30
         self.fatigue_counter = 0
@@ -66,23 +65,27 @@ class Player(Entity):
 
     def heal(self, amount: int) -> int:
         old_hp = self.hp
-        self.hp = min(self.hp + amount, self.max_hp)
+        self.hp = min(self.hp + max(amount, 0), self.max_hp)
 
         return self.hp - old_hp
 
     def set_hp(self, hp: int) -> None:
-        self.hp = hp
+        self.hp = max(hp, 0)
         if self.hp > self.max_hp:
             self.max_hp = hp
 
     def set_max_hp(self, hp: int) -> None:
-        self.max_hp = hp
+        self.max_hp = max(hp, 0)
         if self.hp > self.max_hp:
             self.hp = self.max_hp
 
     def buff(self, hp: int = 0) -> None:
-        self.hp += hp
-        self.max_hp += hp
+        self.max_hp = max(self.max_hp + hp, 0)
+
+        if hp >= 0:
+            self.hp = max(self.hp + hp, 0)
+        else:
+            self.hp = min(self.hp, self.max_hp)
 
     def get_snapshot_attrs(self) -> dict:
         return dict(
@@ -94,10 +97,3 @@ class Player(Entity):
 
     def to_snapshot(self) -> 'PlayerSnapshot':
         return PlayerSnapshot(**self.get_snapshot_attrs())
-
-    def serialize(self) -> dict[str, Any]:  # TODO
-        return {
-            'id': self.id,
-            'hp': self.hp,
-            'max_hp': self.max_hp,
-        }

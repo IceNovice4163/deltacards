@@ -13,7 +13,7 @@ from .rig import TestRig
 @card(236)
 class HotDogVulkin(Monster):
     # Magic: Deal 3 DMG to an opponent.
-    magic = Hit(target=OPPONENT, damage=3)
+    magic = OPPONENT.hit(3)
 
 
 def test_card_hotdogvulkin():
@@ -26,8 +26,9 @@ def test_card_hotdogvulkin():
 @card(23)
 class Migospel(Monster):
     # Magic: Give a monster +3 HP.
-    targets = ALLY_MONSTERS | ENEMY_MONSTERS
-    magic = Buff(target=TARGET, hp=+3)
+    targets = ALL_MONSTERS
+
+    magic = TARGET.buff(hp=+3)
 
 
 def test_card_migospel():
@@ -46,7 +47,14 @@ def test_card_migospel():
 class Knife(Spell):
     # Kill a monster. Deal its COST as DMG to you.
     targets = ALLY_MONSTERS | ENEMY_MONSTERS
-    magic = Kill(target=TARGET) >> Hit(target=YOU, damage=TARGET.cost)
+
+    kill_result: Var[StepResult] = Var(StepResult)
+
+    magic = (
+        TARGET.kill().store_result(kill_result).to(
+            YOU.hit(kill_result.monster.cost)
+        )
+    )
 
 
 def test_card_knife():
@@ -54,27 +62,31 @@ def test_card_knife():
 
     dummy = rig.p1.hand[0]
     rig.p1.play_monster(dummy, slot=0)
+
+    dummy.buff(cost=+1)
+    dummy_cost = dummy.cost
+
     rig.p1.end_turn()
 
     rig.p2.play_spell(rig.p2.hand[0], target=dummy)
 
     assert dummy.zone is CardZone.DUSTPILE
     assert len(rig.p1.obj.board) == 0
-    assert rig.p2.hp == rig.p2.max_hp - dummy.cost
+    assert rig.p2.hp == rig.p2.max_hp - dummy_cost
 
 
 @card(17)
 class KnightKnight(Monster):
     # After this attacks and survives, heal this by the amount of DMG dealt.
-    @on_event(AttackAftermathResult)
-    def on_attack_aftermath(self, res: AttackAftermathResult, game: Game, **kwargs):
+    @on_event(AttackResolvedResult)
+    def on_attack_resolved(self, res: AttackResolvedResult, game: Game, **kwargs):
         if res.attacker_id != self.id:
             return None
 
         if res.attacker_dead:
             return None
 
-        return Heal(target=self, amount=res.damage_to_defender)
+        return SELF.heal(res.damage_to_defender)
 
 
 def test_card_knightknight():
@@ -104,7 +116,7 @@ def test_card_knightknight():
 @card(6)
 class Vegetoid(Monster):
     # Turn start: Heal 5 HP to you.
-    turn_start = Heal(target=YOU, amount=5)
+    turn_start = YOU.heal(5)
 
 
 def test_card_vegetoid():
@@ -123,7 +135,7 @@ def test_card_vegetoid():
 @card(10)
 class Ice(Monster):
     # Dust: Paralyze the killer.
-    dust = Paralyze(target=KILLER)
+    dust = KILLER.paralyze()
 
 
 def test_card_ice():
@@ -156,12 +168,15 @@ def test_card_ice():
 @card(26)
 class Parsnik(Monster):
     # Magic: Paralyze a monster. If it was already Paralyzed, deal 2 DMG to it.
-    res: Var[StepResult] = Var(StepResult)
+    paralyze_result: Var[StepResult] = Var(StepResult)
 
-    targets = ALLY_MONSTERS | ENEMY_MONSTERS
+    targets = ALL_MONSTERS
+
     magic = (
-        Paralyze(target=TARGET).store_result(res)
-        >> Check(res.success == False).to(Hit(target=TARGET, damage=2))
+        TARGET.paralyze().store_result(paralyze_result)
+        >> Check(paralyze_result.success == False).to(
+            TARGET.hit(2)
+        )
     )
 
 
@@ -192,7 +207,9 @@ def test_card_parsnik():
 @card(83)
 class Shopping(Spell):
     # Draw 3 cards costing 5 GOLD or less.
-    magic = Draw(player=YOU, card=(DECK & (COST <= 5)).first()) * 3
+    magic = YOU.draw(
+        (DECK & (COST <= 5)).first()
+    ) * 3
 
 
 def test_card_shopping():
@@ -206,7 +223,7 @@ def test_card_shopping():
 @card(400)
 class Cogwheel(Monster):
     # Turn end: Send the most expensive card in your hand to your deck and draw a card.
-    turn_end = Move(target=HAND >> MAX(COST), zone=CardZone.DECK) >> DrawNext(player=YOU)
+    turn_end = (HAND >> MAX(COST)).to_deck() >> YOU.draw_next()
 
 
 def test_card_cogwheel():
@@ -225,10 +242,10 @@ class ChangeOfWinds(Spell):
     # Choose one to draw.
     # Send the other to the bottom of your deck.
     # Give them -1 COST.
-    magic = Choose(player=YOU, options=DECK[:2]).to(
-        Draw(player=YOU, card=CHOICE_SELECTED)
-        >> Move(target=CHOICE_NOT_SELECTED, zone=CardZone.DECK, pos='bottom')
-        >> Buff(target=CHOICE_SELECTED | CHOICE_NOT_SELECTED, cost=-1)
+    magic = YOU.choose(DECK[:2]).to(
+        YOU.draw(CHOICE_SELECTED)
+        >> CHOICE_NOT_SELECTED.to_deck(pos='bottom')
+        >> (CHOICE_SELECTED | CHOICE_NOT_SELECTED).buff(cost=-1)
     )
 
 
@@ -249,8 +266,10 @@ def test_card_changeofwinds():
 @card(246)
 class Editor2(Monster):
     # Magic: Look at 5 random monsters and choose one. Add it to your hand.
-    magic = Choose(player=YOU, options=DISCOVER(IS_MONSTER & NON_TOKEN, n=5)).to(
-        Move(target=CHOICE_SELECTED, zone=CardZone.HAND)
+    magic = YOU.choose(
+        DISCOVER(IS_MONSTER, n=5)
+    ).to(
+        CHOICE_SELECTED.to_hand()
     )
 
 
@@ -272,7 +291,7 @@ def test_card_editor2():
 @card(76)
 class Strength(Spell):
     # Give 3 random ally monsters +1/+1
-    magic = Buff(target=ALLY_MONSTERS >> RANDOM(3), attack=+1, hp=+1)
+    magic = (ALLY_MONSTERS >> RANDOM(3)).buff(attack=+1, hp=+1)
 
 
 def test_card_strength():
@@ -294,20 +313,21 @@ def test_card_strength():
 @card(73)
 class ColdWinter(Spell):
     # Deal 11 DMG randomly split among all enemy monsters. Add a Change Of Winds to your hand for each one that died.
-    res: Var[StepResult] = Var(StepResult)
+    hit_result: Var[StepResult] = Var(StepResult)
     kill_count: Var[int] = Var(int, default=0)
 
     magic = For(
         11,
         effect=(
-            Hit(target=ENEMY_MONSTERS >> RANDOM(1), damage=1).store_result(res)
-            >> Check((res.success == True) & (res.killed == True)).to(
-                SetVar(var=kill_count, value=kill_count + 1)
+            (ENEMY_MONSTERS >> RANDOM(1)).hit(1).store_result(hit_result).to(
+                Check(hit_result.killed).to(
+                    SetVar(var=kill_count, value=kill_count + 1)
+                )
             )
         )
     ) >> For(
         kill_count,
-        effect=Move(target=CARD_BY_NAME("ChangeOfWinds") >> GENERATE(), zone=CardZone.HAND)
+        effect=GENERATE_CARD("Change of Winds").to_hand()
     )
 
 
@@ -329,11 +349,18 @@ def test_card_coldwinter():
 @card(737)
 class IceShock(Spell):
     # Deal 2 DMG to a monster. If it kills, Paralyze the adjacent ones.
-    res: Var[StepResult] = Var(StepResult)
+    targets = ALL_MONSTERS
 
-    targets = ALLY_MONSTERS | ENEMY_MONSTERS
-    magic = Hit(target=TARGET, damage=2).store_result(res) >> Check((res.success == True) & (res.killed == True)).to(
-        Paralyze(target=ADJACENT(res.target))
+    hit_result: Var[StepResult] = Var(StepResult)
+    adjacent_monsters: Var[TargetSelector] = Var(TargetSelector)
+
+    magic = (
+        SetVar(var=adjacent_monsters, value=ADJACENT(TARGET))
+        >> TARGET.hit(2).store_result(hit_result).to(
+            Check(hit_result.killed).to(
+                adjacent_monsters.paralyze()
+            )
+        )
     )
 
 
@@ -361,8 +388,9 @@ class SnowdrakesMom(Monster):
     # Delay: Summon a Vegetoid. Give it +1/+1 and TRANSPARENCY if this has any ATK buffs.
     res: Var[StepResult] = Var(StepResult)
 
-    magic = ScheduleDelayEffect(SELF)
-    delay = Summon(card=CARD_BY_NAME("Vegetoid") >> GENERATE(), controller=YOU).store_result(res).to(
+    magic = SELF.schedule_delay_effect()
+
+    delay = GENERATE_CARD("Vegetoid").summon().store_result(res).to(
         Check(SELF.buffs.attack > 0).to(
             Buff(target=res.monster_id, attack=+1, hp=+1)
             >> AddKeyword(target=res.monster_id, keyword=TRANSPARENCY)
@@ -397,14 +425,15 @@ def test_card_snowdrakesmom():
 @card(71)
 class FrozenEnergy(Spell):
     # Give a monster +2/+2 and HASTE. Delay: If its COST is the same as its base COST, Paralyze it.
-    targets = ALLY_MONSTERS | ENEMY_MONSTERS
+    targets = ALL_MONSTERS
+
     magic = (
-        Buff(target=TARGET, attack=+2, hp=+2)
-        >> AddKeyword(target=TARGET, keyword=HASTE)
-    ).to(
-        ScheduleDelayEffect(SELF)
+        TARGET.buff(attack=+2, hp=+2)
+        >> TARGET.add_keyword(HASTE)
+        >> SELF.schedule_delay_effect()
     )
-    delay = Check(TARGET.cost == TARGET.base.cost).to(Paralyze(target=TARGET))
+
+    delay = Check(TARGET.cost == TARGET.base.cost).to(TARGET.paralyze())
 
 
 def test_card_frozenenergy():
@@ -426,6 +455,45 @@ def test_card_frozenenergy():
     assert dummy_2.get_status(CardStatusId.PARALYZED) == 0
 
 
+@card(128)
+class FroggitTrio(Spell):
+    frog_1: Var[Card] = Var(Card)
+    frog_2: Var[Card] = Var(Card)
+    reward_frog: Var[Card] = Var(Card)
+
+    magic = (
+        SetVar(var=frog_1, value=GENERATE_CARD("Froggit"))
+        >> frog_1.add_keyword(HASTE)
+        >> frog_1.summon()
+
+        >> SetVar(var=frog_2, value=GENERATE_CARD("Froggit"))
+        >> frog_2.add_keyword(HASTE)
+        >> frog_2.summon()
+
+        >> SELF.schedule_delay_effect()
+    )
+
+    delay = Check(
+        frog_1.dead & frog_2.dead
+    ).to(
+        SetVar(var=reward_frog, value=GENERATE_CARD("Froggit"))
+        >> reward_frog.set_stats(cost=0)
+        >> reward_frog.add_keyword(HASTE)
+        >> reward_frog.to_hand()
+    )
+
+
+def test_card_froggittrio():
+    rig = TestRig.create(p1_deck=[128, 128])
+
+    rig.p1.play_spell(rig.p1.hand[0])
+
+    assert [m.template.name for m in rig.p1.board if m] == ["Froggit", "Froggit"]
+
+    rig.p1.end_turn()
+    assert [c.template.name for c in rig.p1.hand][3:] == []
+
+
 @card(62)
 class Undyne(Monster):
     # Deal 1 DMG to the lowest HP enemy monster 10 times. Summon a Spear with base stats equal to DMG not dealt.
@@ -434,11 +502,17 @@ class Undyne(Monster):
     magic = For(
         10,
         effect=Check(COUNT(ENEMY_MONSTERS) > 0).to(
-            Hit(target=ENEMY_MONSTERS >> MIN(HP), damage=1),
-            else_=SetVar(var=damage_not_dealt, value=damage_not_dealt + 1)
+            (ENEMY_MONSTERS >> MIN(HP)).hit(1),
+            else_=SetVar(
+                var=damage_not_dealt,
+                value=damage_not_dealt + 1,
+            )
         )
     ) >> Check(damage_not_dealt > 0).to(
-        Summon(card=CARD_BY_NAME("Spear") >> GENERATE(), controller=YOU, attack=damage_not_dealt, hp=damage_not_dealt)
+        GENERATE_CARD("Spear").summon(
+            attack=damage_not_dealt,
+            hp=damage_not_dealt,
+        )
     )
 
 
@@ -481,7 +555,7 @@ class KillerCook(Monster):
     magic = ForEach(
         [CARD_BY_NAME("Flour"), CARD_BY_NAME("Eggs"), CARD_BY_NAME("Milk")],
         var=X,
-        effect=Move(target=X >> GENERATE(), zone=CardZone.HAND)
+        effect=(X >> GENERATE_CARD()).to_hand()
     )
 
 
@@ -588,13 +662,15 @@ def test_card_trashy():
 @card(289)
 class RedWagon(Monster):
     # Magic: Catch an ally monster. Dust: Release it to your hand with +3/+3.
-    card_to_release: Var[Monster] = Var(Monster)
-
     targets = ALLY_MONSTERS
-    magic = Catch(catcher=SELF, card_to_catch=TARGET)
-    dust = ReleaseCaughtCard(catcher=SELF, var=card_to_release).to(
-        Buff(target=card_to_release, attack=+3, hp=+3)
-        >> Move(target=card_to_release, zone=CardZone.HAND, controller=card_to_release.controller)
+
+    released_card: Var[Card] = Var(Card)
+
+    magic = SELF.catch(TARGET)
+
+    dust = SELF.release_caught_card(var=released_card).to(
+        released_card.buff(attack=+3, hp=+3)
+        >> released_card.to_hand(controller=released_card.controller)
     )
 
 
@@ -631,11 +707,12 @@ class Determination(Soul):
     def game_start(self, ctx: 'ActionContext'):
         controller = self._get_controller(ctx)
         controller.next_lost_soul = 0
+        return YOU.add_artifact(ARTIFACT_BY_NAME("Save"))
 
     def on_would_die(self, entity: Entity, **kwargs):
         if entity.id == self.controller_id and self.extra_life:
             self.extra_life = False
-            return SetPlayerHP(player=entity, hp=5)
+            return entity.actions.set_hp(5)
 
         return None
 
@@ -671,7 +748,7 @@ class TheHeroine(Monster):
         hand = game.player(self.controller_id).hand
         if entity.id == self.id and self.base.hp > 2 and len(hand) >= 2:
             return [
-                [Erase(target=hand.cards[i]) for i in range(2)]
+                [hand.cards[i].actions.erase() for i in range(2)]
                 + [self.revive]
             ]
 
@@ -753,10 +830,13 @@ class Preservation(Artifact):
     initial_counter = 7
 
     def on_would_overdraw(self, player: 'Player', **kwargs):
-        if player.id == self.controller_id and self.counter >= 1:
-            return UpdateArtifactCounter(artifact=self, delta=-1)
+        if player.id != self.controller_id:
+            return None
 
-        return False
+        if self.counter <= 0:
+            return None
+
+        return SELF.update_artifact_counter(-1)
 
 
 def test_preservation_overdraw_prevention():
@@ -790,12 +870,13 @@ class SpiderBakery(Monster):
     # Magic: Add a Spider to your hand and deck.
     # Synergy: Add a Spider Donut (to the hand) and a Spider Croissant (to the deck) instead.
     magic = Check(~SYNERGY_TRIGGERED).to(
-        Move(target=CARD_BY_NAME("Spider") >> GENERATE(), zone=CardZone.HAND)
-        >> Move(target=CARD_BY_NAME("Spider") >> GENERATE(), zone=CardZone.DECK)
+        GENERATE_CARD("Spider").to_hand()
+        >> GENERATE_CARD("Spider").to_deck()
     )
+
     synergy = (
-        Move(target=CARD_BY_NAME("SpiderDonut") >> GENERATE(), zone=CardZone.HAND)
-        >> Move(target=CARD_BY_NAME("SpiderCroissant") >> GENERATE(), zone=CardZone.DECK)
+        GENERATE_CARD("Spider Donut").to_hand()
+        >> GENERATE_CARD("Spider Croissant").to_deck()
     )
 
 
@@ -820,7 +901,9 @@ def test_spider_bakery():
 @card(288)
 class Pippins(Monster):
     # Turbo: If you have 6 or less cards in your hand, draw a card.
-    turbo = Check(COUNT(HAND) <= 6).to(DrawNext(player=YOU))
+    turbo = Check(COUNT(HAND) <= 6).to(
+        YOU.draw_next()
+    )
 
 
 def test_pippins():
@@ -843,14 +926,15 @@ class Reverberation(Artifact):
         if not res.is_played:
             return None
 
-        monster = game.entity(res.monster_id)
-        if monster.controller_id != self.controller_id:
+        if res.monster.controller_id != self.controller_id:
             return None
+
+        monster = game.entity(res.monster.id)
 
         if not monster.has_ability(Ability.TURBO):
             return None
 
-        return TriggerAbility(target=monster, ability=Ability.TURBO)
+        return monster.actions.trigger_ability(TURBO)
 
 
 def test_reverberation():
@@ -864,10 +948,12 @@ def test_reverberation():
 @card(60)
 class Papyrus(Monster):
     # After this attacks and kills a monster, this can attack another monster. Magic: Program (2): Gain Armor.
-    magic = Program(2).to(AddKeyword(target=SELF, keyword=ARMOR))
+    magic = Program(2).to(
+        SELF.add_keyword(ARMOR)
+    )
 
-    @on_event(AttackAftermathResult)
-    def on_attack_aftermath(self, res: AttackAftermathResult, game: Game, **kwargs):
+    @on_event(AttackResolvedResult)
+    def on_attack_resolved(self, res: AttackResolvedResult, game: Game, **kwargs):
         if res.attacker_id != self.id:
             return None
 
@@ -877,7 +963,7 @@ class Papyrus(Monster):
         if not res.defender_dead:
             return None
 
-        return RefreshAttacks(target=self)
+        return SELF.refresh_attacks()
 
 
 def test_papyrus():
@@ -911,9 +997,11 @@ def test_papyrus():
 class ButlerRalsei(Monster):
     # Shock: Give +2 HP to you.
     # Support: Program (1): Give the attacker +2 HP and trigger the Shock.
-    shock = Buff(target=YOU, hp=2)
+    shock = YOU.buff(hp=+2)
+
     support = Program(1).to(
-        Buff(target=ATTACKER, hp=2) >> TriggerAbility(target=SELF, ability=SHOCK)
+        ATTACKER.buff(hp=+2)
+        >> SELF.trigger_ability(SHOCK)
     )
 
 
@@ -949,9 +1037,14 @@ def test_butlerralsei():
 @card(855)
 class QuickDraw(Spell):
     # Make a monster Wanted and deal 3 DMG to it. Bullseye: Draw a card.
-    targets = ALLY_MONSTERS | ENEMY_MONSTERS
-    magic = AddKeyword(target=TARGET, keyword=WANTED) >> Hit(target=TARGET, damage=3)
-    bullseye = DrawNext(player=YOU)
+    targets = ALL_MONSTERS
+
+    magic = (
+        TARGET.add_keyword(WANTED)
+        >> TARGET.hit(3)
+    )
+
+    bullseye = YOU.draw_next()
 
 
 def test_quickdraw():
@@ -976,11 +1069,61 @@ def test_quickdraw():
     assert [c.template.id for c in rig.p1.hand] == [1]
 
 
+@card(903)
+class ZootSusie(Monster):
+    targets = ALL_MONSTERS
+
+    magic = TARGET.hit(4)
+
+    bullseye = (
+        ADJACENT(TARGET).hit(3)
+        >> GENERATE_CARD("Recruitment").to_hand()
+    )
+
+
+def test_zootsusie():
+    rig = TestRig.create(p1_deck=[1, 1, 1, 1], p2_deck=[903])
+
+    for _ in range(4):
+        rig.p1.play_monster(rig.p1.hand[0])
+
+    rig.p1.end_turn()
+
+    rig.p2.play_monster(rig.p2.hand[0], target=rig.p1.board[2])
+    assert rig.p2.hand[-1].template.name == "Recruitment"
+    assert [(c.template.id if c else None) for c in rig.p1.board] == [1, 1, None, 1]
+    assert [(c.hp if c else None) for c in rig.p1.board] == [4, 1, None, 1]
+
+
+def test_zootsusie_attack():
+    rig = TestRig.create(p1_deck=[903], p2_deck=[1, 1, 1, 1])
+
+    defender = rig.p1.hand[0]
+
+    rig.p1.play_monster(defender)
+    rig.p1.end_turn()
+
+    for _ in range(4):
+        rig.p2.play_monster(rig.p2.hand[0])
+
+    attacker = rig.p2.board[2]
+    attacker.buff(attack=defender.hp - attacker.attack, hp=defender.attack - attacker.hp)
+    attacker.add_keyword(CardKeyword.HASTE)
+
+    rig.p2.attack(attacker, defender)
+
+    assert sum(1 for m in rig.p1.board if m) == 0
+    assert rig.p1.hand[-1].template.name == "Recruitment"
+    assert [(c.template.id if c else None) for c in rig.p2.board] == [1, 1, None, 1]
+    assert [(c.hp if c else None) for c in rig.p2.board] == [4, 1, None, 1]
+
+
 @card(79)
 class Penetration(Spell):
     # Silence a monster.
-    targets = ALLY_MONSTERS | ENEMY_MONSTERS
-    magic = Silence(target=TARGET)
+    targets = ALL_MONSTERS
+
+    magic = TARGET.silence()
 
 
 def test_card_penetration():
@@ -1041,7 +1184,7 @@ class LaggyTV(Monster):
         if monster.controller_id != self.controller_id:
             return None
 
-        return Buff(target=monster, attack=+1, hp=+2)
+        return monster.actions.buff(attack=+1, hp=+2)
 
 
 def test_card_laggytv():
@@ -1055,8 +1198,8 @@ def test_card_laggytv():
 
     rig.p1.play_monster(laggy_tv)
 
-    assert laggy_tv.attack == laggy_tv.base.attack + 1
-    assert laggy_tv.hp == laggy_tv.base.hp + 2
+    assert laggy_tv.attack == laggy_tv.base.attack
+    assert laggy_tv.hp == laggy_tv.base.hp
     assert dummy.cost == dummy.base.cost + 1
     assert dummy_2.cost == dummy_2.base.cost + 1
     assert penetration.cost == penetration.base.cost
@@ -1095,7 +1238,7 @@ class DiamondBoy1(Monster):
             source=self,
             description="Other non-Armor ally monsters take 1 less DMG (can't stack)",
             applies=applies,
-            apply=lambda dmg, q: max(dmg - 1, 0),
+            apply=lambda damage, q: damage - 1,
             unique=True,
             key="non_armor_allies:-1_damage",
         )
@@ -1129,10 +1272,14 @@ def test_card_diamondboy1():
 @card(379)
 class Crown(Spell):
     # Give a monster +1/+2. If it's a C-Round, turn it into a K-Round instead. Draw a card.
-    targets = ALLY_MONSTERS | ENEMY_MONSTERS
-    magic = Check(TARGET.template_name == "C-Round").to(
-        TransformCard(target=TARGET, new_card=CARD_BY_NAME("K-Round") >> GENERATE()),
-        else_=Buff(target=TARGET, attack=+1, hp=+2),
+    targets = ALL_MONSTERS
+
+    magic = (
+        Check(TARGET & (TEMPLATE_NAME == "C-Round")).to(
+            TARGET.turn_into(GENERATE_CARD("K-Round")),
+            else_=TARGET.buff(attack=+1, hp=+2)
+        )
+        >> YOU.draw_next()
     )
 
 
@@ -1162,8 +1309,8 @@ def test_card_crown():
 class MisterElegance(Monster):
     # Magic: Switch: [Gain +1/+1 and Armor] or [Summon a copy of this].
     magic = Switch(
-        left=Buff(target=SELF, attack=+1, hp=+1) >> AddKeyword(target=SELF, keyword=ARMOR),
-        right=Summon(card=SELF >> COPY(), controller=YOU),
+        left=SELF.buff(attack=+1, hp=+1) >> SELF.add_keyword(ARMOR),
+        right=(SELF >> COPY()).summon()
     )
 
 
@@ -1196,7 +1343,7 @@ def test_card_misterelegance():
 @card(442)
 class SandDog(Monster):
     # Magic: Summon an exact copy of this.
-    magic = Summon(card=SELF >> EXACT_COPY(), controller=YOU)
+    magic = (SELF >> EXACT_COPY()).summon()
 
 
 def test_card_sanddog():
@@ -1216,3 +1363,219 @@ def test_card_sanddog():
 
     assert rig.p1.board[1].creator_id == rig.p1.board[0].id
     assert rig.p1.board[1].creator_base_identity == ('card', 442)
+
+
+@card(598)
+class Gemstone(Spell):
+    # Deal 1 DMG.
+    targets = ALL_PLAYERS | ALL_MONSTERS
+
+    magic = TARGET.hit(1)
+
+
+@card(548)
+class MagicCrystal(Monster):
+    # Magic: Cast 4 Gemstones on random alive enemy monsters.
+    # If you spent gold on spells last turn, add a Crystal Downpour to your hand.
+    magic = For(
+        4,
+        effect=Cast(
+            card=GENERATE_CARD("Gemstone"),
+            controller=YOU,
+            effect_target=ENEMY_MONSTERS >> RANDOM(1)
+        )
+    ) >> Check(
+        SPENT_GOLD_ON_SPELLS_LAST_TURN
+    ).to(
+        GENERATE_CARD("Crystal Downpour").to_hand()
+    )
+
+
+def test_magic_crystal():
+    rig = TestRig.create(p1_deck=[548], p2_deck=[1, 1])
+
+    rig.p1.end_turn()
+
+    defender_1 = rig.p2.hand[0]
+    defender_2 = rig.p2.hand[1]
+    rig.p2.play_monster(defender_1)
+    rig.p2.play_monster(defender_2)
+    defender_1.buff(hp=+1)
+    defender_2.buff(hp=+1)
+    rig.p2.end_turn()
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert sum(1 for m in rig.p2.board if m) == 2
+    assert rig.p2.board[0].hp + rig.p2.board[1].hp == (5 + 5) - 4
+    assert [c.template.id for c in rig.p1.hand] == [1, 1, 1, 1]
+
+
+@card(386)
+class Pizzapants(Monster):
+    # Magic: Gain +1/+1 for each other ally Pizzapants you played this game.
+    played_count: Var[int] = Var(int)
+
+    magic = SetVar(
+        var=played_count,
+        value=COUNT(
+            CARDS_PLAYED(player=YOU)
+            & (TEMPLATE_ID == SELF.template_id)
+            & (CARD_ID != SELF.id)
+        ),
+    ) >> SELF.buff(attack=played_count, hp=played_count)
+
+
+def test_pizzapants():
+    rig = TestRig.create(p1_deck=[386, 386, 1, 386], p2_deck=[1])
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert rig.p1.board[0].attack == rig.p1.board[0].hp == 3
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert rig.p1.board[1].attack == rig.p1.board[1].hp == 4
+
+    rig.p1.end_turn()
+
+    rig.p2.play_monster(rig.p2.hand[0])
+    rig.p2.end_turn()
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert rig.p1.board[3].attack == rig.p1.board[3].hp == 5
+
+
+@card(794)
+class GIGAQueen(Monster):
+    # Magic: Look At All Giga Attacks You Haven't Cast And Add One To Your Hand.
+    magic = (
+        YOU.choose(
+            (
+                CARD_LIBRARY
+                & IS_SPELL
+                & HAS_TRIBE(Tribe.GIGA_ATTACK)
+                & ~IN_HISTORY(SPELLS_CAST(player=YOU))
+            ) >> GENERATE_CARD()
+        ).to(
+            CHOICE_SELECTED.to_hand()
+        )
+    )
+
+
+def test_gigaqueen():
+    rig = TestRig.create(p1_deck=[794, 794, 794])
+
+    for _ in range(2):
+        rig.p1.play_monster(rig.p1.hand[0])
+        choices = rig.get_choices()
+        assert [c.template.id for c in choices] == [796, 797, 798, 799]
+
+        rig.p1.choose([choices[0]])
+        assert choices[0].zone is CardZone.HAND
+
+    rig.p1.play_spell(rig.p1.hand[-1])
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    choices = rig.get_choices()
+    assert [c.template.id for c in choices] == [797, 798, 799]
+
+
+@artifact(52)
+class SeamsSeap(Artifact):
+    name = "Seam's Seap"
+    rarity = ArtifactRarity.LEGENDARY
+
+    generated_card: Var[TargetSelector] = Var(TargetSelector)
+    last_counter_turn: StateVar[int | None] = StateVar(default=None)
+
+    @on_event(CardPlayedResult)
+    def on_card_played(self, res: CardPlayedResult, game: 'Game', **kwargs):
+        if res.player_id != self.controller_id:
+            return None
+
+        if game.players[self.controller_id].gold != 0:
+            return None
+
+        return OncePerTurn(
+            self.last_counter_turn,
+            SELF.update_artifact_counter(+1),
+        )
+
+    turn_start = Check(SELF.counter >= 2).to(
+        SELF.update_artifact_counter(-2)
+        >> SetVar(
+            var=generated_card,
+            value=GENERATE_CARD("Shadow Crystal"),
+        )
+        >> generated_card.set_stats(cost=0)
+        >> generated_card.to_hand()
+    )
+
+
+def test_seamsseap():
+    rig = TestRig.create(p1_deck=[1, 1, 1, 1], p1_artifacts=[52], starting_gold=2)
+    assert rig.p1.obj.artifacts[0].counter == 0
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert rig.p1.gold == 1
+    assert rig.p1.obj.artifacts[0].counter == 0
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert rig.p1.gold == 0
+    assert rig.p1.obj.artifacts[0].counter == 1
+
+    rig.p1.obj.gold += 1
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert rig.p1.gold == 0
+    assert rig.p1.obj.artifacts[0].counter == 1
+    assert rig.p1.obj.artifacts[0].state == {'last_counter_turn': 1}
+
+
+@card(468)
+class Rudolph(Monster):
+    # Need: You have no other cards named Rudolph in your hand. Magic: Give +5 HP to you.
+    need = ~EXISTS(
+        HAND
+        & ~SELF
+        & (TEMPLATE_NAME == "Rudolph")
+    )
+
+    magic = YOU.buff(hp=+5)
+
+
+def test_rudolph():
+    rig = TestRig.create(p1_deck=[468, 468])
+    rig.p1.obj.hp = 10
+
+    assert not rig.game.card_need_fulfilled(rig.p1.hand[0])
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert rig.p1.hp == 10
+
+    assert rig.game.card_need_fulfilled(rig.p1.hand[0])
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert rig.p1.hp == 10 + 5
+
+
+@card(631)
+class Shovel(Monster):
+    magic = Check(LOOP_COPY & HAND & ~HAS_STATUS(LOOP)).to(
+        Program(3).to(
+            LOOP_COPY.erase().to(
+                SELF.buff(attack=+3, hp=+4)
+            )
+        )
+    )
+
+
+def test_shovel():
+    rig = TestRig.create(p1_deck=[631, 631])
+
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert [c.template.id for c in rig.p1.hand] == [631, 1, 1]
+    assert rig.p1.board[0].attack == rig.p1.board[0].base.attack + 3
+    assert rig.p1.board[0].hp == rig.p1.board[0].base.hp + 4
+
+    rig.p1.obj.gold = rig.p1.hand[0].cost
+    rig.p1.play_monster(rig.p1.hand[0])
+    assert [c.template.id for c in rig.p1.hand] == [1, 1, 631]
+    assert rig.p1.board[1].attack == rig.p1.board[1].base.attack
+    assert rig.p1.board[1].hp == rig.p1.board[1].base.hp

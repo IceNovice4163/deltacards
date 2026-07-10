@@ -3,6 +3,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Callable, TYPE_CHECKING
 
+from deltacards.actions.methods import ActionMethods
+from deltacards.model.enums import CardStatusId
+
 if TYPE_CHECKING:
     from deltacards.actions.standard import ActionContext
     from deltacards.model.entity import Entity
@@ -86,7 +89,34 @@ class ValueExpr(ABC):
     def __mod__(self, other) -> 'ValueExpr':
         return BinaryValue(operator.mod, self, to_value(other))
 
+    def __neg__(self):
+        return NegValue(self)
+
     # Boolean operations
+    def __and__(self, other: 'ValueExpr | Predicate') -> 'ValueExpr':
+        if not isinstance(other, (ValueExpr, Predicate)):
+            return NotImplemented
+
+        if isinstance(other, Predicate):
+            return BinaryValue(operator.and_, BooleanValue(self), PredicateAsValueExpr(other))
+
+        return BinaryValue(operator.and_, BooleanValue(self), BooleanValue(other))
+
+    def __rand__(self, other):
+        return self.__and__(other)
+
+    def __or__(self, other: 'ValueExpr | Predicate') -> 'ValueExpr':
+        if not isinstance(other, (ValueExpr, Predicate)):
+            return NotImplemented
+
+        if isinstance(other, Predicate):
+            return BinaryValue(operator.or_, BooleanValue(self), PredicateAsValueExpr(other))
+
+        return BinaryValue(operator.or_, BooleanValue(self), BooleanValue(other))
+
+    def __ror__(self, other):
+        return self.__or__(other)
+
     def __invert__(self) -> 'ValueExpr':
         return NotValue(self)
 
@@ -108,6 +138,14 @@ class ValueExpr(ABC):
 
     def __gt__(self, other) -> 'Predicate':
         return ComparisonPredicate(self, operator.gt, to_value(other))
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class PredicateAsValueExpr(ValueExpr):
+    pred: Predicate
+
+    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> Any:
+        return self.pred.test(entity, ctx=ctx, **kwargs)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -142,6 +180,17 @@ class BinaryValue(ValueExpr):
 
 
 @dataclass(frozen=True, slots=True, eq=False)
+class NegValue(ValueExpr):
+    value: Any
+
+    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> Any:
+        return -self.value.eval(ctx=ctx, entity=entity, **kwargs)
+
+    def __repr__(self) -> str:
+        return f"(-{self.value!r})"
+
+
+@dataclass(frozen=True, slots=True, eq=False)
 class NotValue(ValueExpr):
     value: Any
 
@@ -150,6 +199,17 @@ class NotValue(ValueExpr):
 
     def __repr__(self) -> str:
         return f"(~{self.value!r})"
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class BooleanValue(ValueExpr):
+    value: Any
+
+    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> Any:
+        return bool(self.value.eval(ctx=ctx, entity=entity, **kwargs))
+
+    def __repr__(self) -> str:
+        return f"bool({self.value!r})"
 
 
 # --------------------
@@ -219,9 +279,9 @@ class NotPredicate(Predicate):
 
 @dataclass(frozen=True, slots=True, eq=False)
 class ComparisonPredicate(Predicate):
-    left: 'ValueExpr'
+    left: ValueExpr
     op: Callable[[Any, Any], bool]
-    right: 'ValueExpr'
+    right: ValueExpr
 
     def test(self, entity: Any, ctx: 'ActionContext', **kwargs) -> bool:
         return bool(self.op(
@@ -282,7 +342,7 @@ class _BuffAccessor:
         raise AttributeError(name)
 
 
-class TargetSelector(ABC):
+class TargetSelector(ABC, ActionMethods):
     __slots__ = ()
 
     def __bool__(self) -> bool:
@@ -297,6 +357,13 @@ class TargetSelector(ABC):
 
         if isinstance(other, Predicate):
             return FilterSelector(self, other)
+
+        if isinstance(other, ValueExpr):
+            # Accept boolean `ValueExpr` objects as filters
+            return FilterSelector(
+                self,
+                ComparisonPredicate(to_value(other), operator.eq, LiteralValue(True)),
+            )
 
         return NotImplemented
 
@@ -315,8 +382,8 @@ class TargetSelector(ABC):
 
         return TransformedSelector(self, transform)
 
-    def __getitem__(self, item: int | slice) -> 'TargetSelector':
-        return SliceSelector(self, item)
+    def __getitem__(self, item: int | slice | ValueExpr) -> 'TargetSelector':
+        return SliceSelector(self, to_value(item))
 
     def __getattr__(self, name: str) -> ValueExpr:
         if name in (
@@ -324,15 +391,22 @@ class TargetSelector(ABC):
             'template_id',
             'template_name',
             'rarity',
+            'zone',
             'cost',
             'attack',
             'hp',
+            'hp_missing',
             'max_hp',
+            'age',
             'pos',
+            'has_attacked',
             'controller_id',
             'controller',
             'creator_id',
+            'is_generated',
             'gold',
+            'turn',
+            'counter',
         ):
             from deltacards.dsl.values import SelectorAttrValue
             return SelectorAttrValue(self, attr=name)
@@ -388,8 +462,18 @@ class TargetSelector(ABC):
     def last(self) -> 'TargetSelector':
         return self[-1]
 
-    def copy(self):  # TODO
-        ...
+    @property
+    def dead(self) -> ValueExpr:
+        from deltacards.dsl.values import SelectorDeadValue
+        return SelectorDeadValue(self)
+
+    def artifact(self, name: str):
+        from deltacards.dsl.selectors import PlayerArtifactSelector
+        return PlayerArtifactSelector(self, name=name)
+
+    def status(self, status_id: CardStatusId):
+        from deltacards.dsl.values import SelectorStatusValue
+        return SelectorStatusValue(self, status_id=status_id)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -478,16 +562,17 @@ class TransformedSelector(TargetSelector):
 @dataclass(frozen=True, slots=True, eq=False)
 class SliceSelector(TargetSelector):
     inner: TargetSelector
-    item: int | slice
+    item: ValueExpr
 
     def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
         items = self.inner.eval(ctx=ctx, **kwargs)
+        slice_or_index = self.item.eval(ctx=ctx, **kwargs)
 
-        if isinstance(self.item, slice):
-            return items[self.item]
+        if isinstance(slice_or_index, slice):
+            return items[slice_or_index]
 
         try:
-            return [items[self.item]]
+            return [items[slice_or_index]]
         except IndexError:
             return []
 

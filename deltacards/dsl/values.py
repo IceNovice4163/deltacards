@@ -1,10 +1,17 @@
 from dataclasses import dataclass
 from typing import Any, Literal, TYPE_CHECKING
 
+from deltacards.actions.results import MonsterKilledResult
 from deltacards.dsl.core import TargetSelector, TargetingError, ValueExpr, to_value
+from deltacards.dsl.inspection import (
+    _MISSING,
+    attr_of,
+    base_attr_of,
+    template_id_of,
+)
 from deltacards.model.cards import Card, CardZone
+from deltacards.model.enums import CardStatusId
 from deltacards.model.player import Player
-from deltacards.model.templates import CardTemplate
 
 if TYPE_CHECKING:
     from deltacards.actions.standard import ActionContext
@@ -22,10 +29,11 @@ class AttrValue(ValueExpr):
         if entity is None:
             raise TargetingError(f"{self.attr.upper()} requires a candidate entity")
 
-        try:
-            return getattr(entity, self.attr)
-        except AttributeError as e:
-            raise TargetingError(f"{self.attr.upper()} attribute is not available on {type(entity).__name__}") from e
+        value = attr_of(entity, self.attr, default=_MISSING)
+        if value is _MISSING:
+            raise TargetingError(f"{self.attr.upper()} attribute is not available on {type(entity).__name__}")
+
+        return value
 
     def __repr__(self) -> str:
         return self.attr.upper()
@@ -42,13 +50,11 @@ class TemplateIdValue(ValueExpr):
         if entity is None:
             raise TargetingError("TEMPLATE_ID requires a candidate entity")
 
-        if isinstance(entity, CardTemplate):
-            return entity.id
+        value = template_id_of(entity, default=_MISSING)
+        if value is _MISSING:
+            raise TargetingError(f"TEMPLATE_ID is not available on {type(entity).__name__}")
 
-        if isinstance(entity, Card):
-            return entity.template.id
-
-        raise TargetingError(f"TEMPLATE_ID is not available on {type(entity).__name__}")
+        return value
 
     def __repr__(self) -> str:
         return "TEMPLATE_ID"
@@ -66,19 +72,11 @@ class BaseStatValue(ValueExpr):
         if entity is None:
             raise TargetingError(f"BASE_{self.attr.upper()} requires a candidate entity")
 
-        if isinstance(entity, Card):
-            try:
-                return getattr(entity.base, self.attr)
-            except AttributeError as e:
-                raise TargetingError(f"Card.base.{self.attr} is missing on {entity!r} (wrong card type?)") from e
+        value = base_attr_of(entity, self.attr, default=_MISSING)
+        if value is _MISSING:
+            raise TargetingError(f"BASE_{self.attr.upper()} is not available on {type(entity).__name__}")
 
-        if isinstance(entity, CardTemplate):
-            try:
-                return getattr(entity, self.attr)
-            except AttributeError as e:
-                raise TargetingError(f"CardTemplate.{self.attr} is missing on {entity!r} (wrong card type?)") from e
-
-        raise TargetingError(f"BASE_{self.attr.upper()} is not available on {type(entity).__name__}")
+        return value
 
     def __repr__(self) -> str:
         return f"BASE_{self.attr.upper()}"
@@ -97,12 +95,17 @@ class SelectorAttrValue(ValueExpr):
         target = self.selector.eval_one(ctx=ctx, **kwargs)
 
         if self.attr == 'controller':
-            return ctx.game.player(target.controller_id)
+            controller_id = attr_of(target, 'controller_id', default=_MISSING)
+            if controller_id is _MISSING:
+                raise TargetingError(f"{self.selector!r}.controller is not available on {type(target).__name__}")
 
-        try:
-            return getattr(target, self.attr)
-        except AttributeError as e:
-            raise TargetingError(f"{self.selector!r}.{self.attr} is not available on {type(target).__name__}") from e
+            return ctx.game.player(controller_id)
+
+        value = attr_of(target, self.attr, default=_MISSING)
+        if value is _MISSING:
+            raise TargetingError(f"{self.selector!r}.{self.attr} is not available on {type(target).__name__}")
+
+        return value
 
     def __repr__(self) -> str:
         return f"{self.selector!r}.{self.attr}"
@@ -120,10 +123,11 @@ class SelectorBaseStatValue(ValueExpr):
     def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> Any:
         target = self.selector.eval_one(ctx=ctx, **kwargs)
 
-        try:
-            return getattr(target.base, self.attr)
-        except AttributeError as e:
-            raise TargetingError(f"{self.selector!r}.base.{self.attr} is not available on {type(target).__name__}") from e
+        value = base_attr_of(target, self.attr, default=_MISSING)
+        if value is _MISSING:
+            raise TargetingError(f"{self.selector!r}.base.{self.attr} is not available on {type(target).__name__}")
+
+        return value
 
     def __repr__(self) -> str:
         return f"{self.selector!r}.base.{self.attr}"
@@ -141,6 +145,9 @@ class SelectorBuffValue(ValueExpr):
     def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> Any:
         target = self.selector.eval_one(ctx=ctx, **kwargs)
 
+        if not isinstance(target, Card):
+            raise TargetingError(f"{self.selector!r}.buffs.{self.attr} is not available on {type(target).__name__}")
+
         try:
             return getattr(target.buffs, self.attr)
         except AttributeError as e:
@@ -151,18 +158,43 @@ class SelectorBuffValue(ValueExpr):
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class CountValue(ValueExpr):
+class SelectorDeadValue(ValueExpr):
+    """
+    Returns True if the selected monster has a `MonsterKilledResult` in game history.
+    """
     selector: TargetSelector
 
-    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> int:
-        return len(self.selector.eval(ctx=ctx, **kwargs))
+    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> bool:
+        target = self.selector.eval_one(ctx=ctx, **kwargs)
+
+        return any(
+            result.monster_id == target.id
+            for result in ctx.game.log_by_type[MonsterKilledResult]
+        )
 
     def __repr__(self) -> str:
-        return f"COUNT({self.selector!r})"
+        return f"{self.selector!r}.dead"
 
 
-def COUNT(selector: TargetSelector) -> CountValue:
-    return CountValue(selector)
+@dataclass(frozen=True, slots=True, eq=False)
+class SelectorStatusValue(ValueExpr):
+    """
+    Get status value of the entity resolved by selector.
+    Example: TARGET.status(DODGE)
+    """
+    selector: TargetSelector
+    status_id: CardStatusId
+
+    def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs) -> Any:
+        target = self.selector.eval_one(ctx=ctx, **kwargs)
+
+        try:
+            return target.get_status(self.status_id)
+        except AttributeError as e:
+            raise TargetingError(f"{self.selector!r}.status({self.status_id}) is not available on {type(target).__name__}") from e
+
+    def __repr__(self) -> str:
+        return f"{self.selector!r}.status({self.status_id})"
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -228,9 +260,9 @@ class EmptySlotsValue(ValueExpr):
         used = len(self.selector.eval(ctx=ctx, **kwargs))
 
         player = self.selector.player.eval_one(ctx=ctx, **kwargs)
-        if self.selector.zone == CardZone.BOARD:
+        if self.selector.zone is CardZone.BOARD:
             cap = int(player.board.MAX_CARDS)
-        elif self.selector.zone == CardZone.HAND:
+        elif self.selector.zone is CardZone.HAND:
             cap = 7
         else:
             raise TargetingError(f"EMPTY_SLOTS only supports HAND/BOARD, got {self.selector.zone}")
@@ -284,7 +316,6 @@ RARITY = AttrValue('rarity')
 
 ATTACK = AttrValue('attack')
 HP = AttrValue('hp')
-MAX_HP = AttrValue('max_hp')
 CREATOR_ID = AttrValue('creator_id')
 
 BASE_COST = BaseStatValue('cost')

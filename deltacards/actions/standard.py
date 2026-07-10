@@ -1,5 +1,5 @@
 import math
-from typing import Any, TYPE_CHECKING
+from typing import Any, Literal, TYPE_CHECKING
 
 from deltacards.actions.base import (
     Action,
@@ -11,13 +11,19 @@ from deltacards.actions.base import (
 from deltacards.actions.results import *
 from deltacards.dsl.selectors import ENEMY_MONSTERS
 from deltacards.dsl.transforms import RANDOM
-from deltacards.model.cards import Card, CardZone, CaughtCardData, Monster, Spell
+from deltacards.model.cards import (
+    Card,
+    CardZone,
+    CaughtCardData,
+    Monster,
+    Spell,
+)
 from deltacards.model.entity import Entity
 from deltacards.model.enums import (
     Ability,
     CardKeyword,
     CardStatusId,
-    DamageKind,
+    CardToggleableAbility, DamageKind,
     Tribe,
 )
 from deltacards.model.player import Player
@@ -26,58 +32,82 @@ from deltacards.model.requests import (
     ChooseEntityPrompt,
     PendingChoiceRequest,
 )
+from deltacards.model.snapshots import CardSnapshot
+from deltacards.model.types import GoldSpendReason
 
 if TYPE_CHECKING:
-    from deltacards.dsl.vars import Var
+    from deltacards.dsl.vars import StateVar, Var
     from deltacards.model.artifacts import Artifact
 
 
 __all__ = (
     'Action', 'ActionContext',
-    'SetVar', 'Choose', 'Reveal',
-    'Hit', 'Heal', 'Kill', 'Buff',
-    'Draw', 'DrawNext', 'Overdraw',
+    'SetVar', 'SetEntityState', 'Choose', 'Reveal',
+    'Hit', 'Heal',
+    'Kill', 'ReleaseMonsterDeathFinalization',
+    'Buff',
+    'Draw', 'DrawNext', 'Overdraw', 'TakeFatigueDamage',
     'AddKeyword', 'RemoveKeyword',
     'SetStatus', 'RemoveStatus',
-    'Silence', 'Paralyze',
+    'Silence', 'Paralyze', 'RemoveNegativeEffects',
     'SetPlayerHP',
-    'SetStats', 'SwapStats', 'HalveStats',
-    'Move',
-    'Summon', 'Play', 'Cast', 'RemoveCardFromStack', 'TriggerAbility',
+    'SetStats', 'SetBaseStats', 'SwapStats', 'HalveStats',
+    'Move', 'SwapCards',
+    'Summon', 'Play', 'Cast', 'RemoveCardFromStack',
+    'TriggerAbility', 'ToggleAbility',
     'Catch', 'ReleaseCaughtCard',
     'Erase', 'TransformCard',
     'Attack', 'CombatDamage', 'AttackAftermath', 'RefreshAttacks',
     'EarnGold', 'SpendGold', 'SetGold',
-    'AddArtifact', 'UpdateArtifactCounter',
+    'AddArtifact', 'ToggleArtifact', 'TransformArtifact', 'UpdateArtifactCounter',
     'ScheduleEffect', 'ScheduleDelayEffect',
     'SkipNextTurn', 'AdvanceTurn', 'ResolveScheduledEffectsAction',
     'PlayerStartTurnAction', 'PlayerEndTurnAction',
 )
 
 
+CARD_EDITABLE_ZONES = (CardZone.INVALID, CardZone.STACK, CardZone.BOARD, CardZone.HAND, CardZone.DECK)
+
+
 class SetVar(Action):
     var: Arg['Var'] = Arg(raw=True)  # raw=True prevents turning `var` into a value
-    value: Arg[Any] = Arg()
+    value: Arg[Any] = Arg(preserve_list=True)
 
     def execute(self, var: 'Var', value: Any, *, ctx: ActionContext, **kwargs):
         ctx.vars[var.name] = value
         return ActionOutcome(success=True)
 
 
+class SetEntityState(Action):
+    state_var: Arg['StateVar'] = Arg(raw=True)  # raw=True prevents turning `state_var` into a value
+    value: Arg[Any] = Arg(preserve_list=True)
+
+    def execute(self, state_var: 'StateVar', value: Any, *, ctx: ActionContext, **kwargs):
+        state_var.set_value(entity=ctx.source, value=value)
+        return ActionOutcome(success=True)
+
+
 class Choose(Action):
     player: Arg['Player'] = Arg()
-    options: Arg['list[Entity]'] = Arg()
+    options: Arg['list[Entity]'] = Arg(preserve_list=True)
+
+    @staticmethod
+    def _store_choices(ctx: ActionContext, options: list[Entity], chosen: list[Entity]) -> None:
+        ctx.vars['_choice_selected'] = chosen
+        ctx.vars['_choice_not_selected'] = [entity for entity in options if entity not in chosen]
 
     def execute(self, player: 'Player', options: 'list[Entity]', *, ctx: ActionContext, **kwargs):
         if len(options) == 0:
             return ActionOutcome(success=False)
 
+        if ctx.env.get('_auto_choose', False):
+            chosen = [ctx.game.rng.choice(options)]
+            self._store_choices(ctx, options, chosen)
+            return ActionOutcome(success=True)
+
         def _on_choose(response: ChoiceResponse):
             chosen = [entity for entity in options if entity.id in response.selected_option_ids]
-            not_chosen = [entity for entity in options if entity not in chosen]
-
-            ctx.vars['_choice_selected'] = chosen
-            ctx.vars['_choice_not_selected'] = not_chosen
+            self._store_choices(ctx, options, chosen)
 
         pending_request = PendingChoiceRequest(
             request_id=ctx.game.alloc_request_id(),
@@ -97,8 +127,17 @@ class Choose(Action):
 class Reveal(Action):
     card: Arg['Card'] = Arg(many=True)
 
-    def execute(self, card: 'Card', *, ctx: ActionContext, **kwargs):  # TODO
-        return ActionOutcome(success=True)
+    def execute(self, card: 'Card', *, ctx: ActionContext, **kwargs):
+        return ActionOutcome(
+            success=True,
+            results=(
+                CardRevealedResult(
+                    source_id=ctx.source.id,
+                    card_id=card.id,
+                    card=card.to_snapshot(),
+                ),
+            ),
+        )
 
 
 class Hit(Action):
@@ -126,6 +165,12 @@ class Heal(Action):
     amount: Arg[int] = Arg()
 
     def execute(self, target: 'Monster | Player', amount: int, *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, (Monster, Player)):
+            return ActionOutcome(success=False)
+
+        if isinstance(target, Monster) and target.zone is not CardZone.BOARD:
+            return ActionOutcome(success=False)
+
         hp_recovered = target.heal(amount)
 
         return ActionOutcome(
@@ -156,6 +201,9 @@ class Kill(Action):
         ctx: ActionContext,
         **kwargs,
     ):
+        if not isinstance(target, (Monster, Player)):
+            return ActionOutcome(success=False)
+
         if killer is None:
             killer = ctx.source
 
@@ -171,8 +219,15 @@ class Kill(Action):
         results = []
 
         if isinstance(target, Monster):
+            if target.zone is not CardZone.BOARD:
+                return ActionOutcome(success=False)
+
             if target.has_keyword(CardKeyword.KR):
-                if isinstance(killer, Monster) and killer.hp > 0:
+                if (
+                    isinstance(killer, Monster)
+                    and killer.zone is CardZone.BOARD
+                    and killer.hp > 0
+                ):
                     buff_target = killer
                 else:
                     buff_target = RANDOM(ENEMY_MONSTERS)
@@ -183,16 +238,30 @@ class Kill(Action):
 
             if target.has_keyword(CardKeyword.WANTED):
                 action_calls.append(
-                    ActionCall(EarnGold(player=ctx.game.player(target.controller_id).opponent, amount=1), source=target)
+                    ActionCall(
+                        EarnGold(player=ctx.game.player(target.controller_id).opponent, amount=1),
+                        source=target,
+                    )
                 )
 
-            effect = target.get_ability(Ability.DUST)
-            if effect is not None:
+            dust_effect = target.get_ability(Ability.DUST)
+            if dust_effect is not None:
+                ctx.game.hold_monster_death_finalization(target)
+
                 action_calls.append(
-                    ActionCall(effect, source=target, env={'killer': killer})
+                    ActionCall(
+                        TriggerAbility(target=target, ability=Ability.DUST),
+                        source=target,
+                        env={'killer': killer},
+                    )
                 )
 
-            ctx.game.move_card(target, target.controller_id, CardZone.DUSTPILE)
+                action_calls.append(
+                    ActionCall(
+                        ReleaseMonsterDeathFinalization(target=target),
+                        source=target,
+                    )
+                )
 
             results.append(
                 MonsterKilledResult(
@@ -204,12 +273,17 @@ class Kill(Action):
                 )
             )
 
+            if target.death_finalization_locks > 0:
+                ctx.game.move_monster_to_pending_death_state(target)
+            else:
+                ctx.game.move_card(target, target.controller_id, CardZone.DUSTPILE)
+
         elif isinstance(target, Player):
             ctx.game.game_over = True
             ctx.game.dead_players.add(target.id)
 
             results.append(
-                PlayerKilledResult(
+                PlayerDefeatedResult(
                     source_id=ctx.source.id,
                     player_id=target.id,
                     player=target.to_snapshot(),
@@ -229,18 +303,47 @@ class Kill(Action):
         )
 
 
+class ReleaseMonsterDeathFinalization(Action):
+    target: Arg['Monster'] = Arg()
+
+    def execute(self, target: Monster, *, ctx: ActionContext, **kwargs):
+        ctx.game.release_monster_death_finalization(target)
+        return ActionOutcome(success=True)
+
+
 class Buff(Action):
     target: Arg['Card | Player'] = Arg(many=True)
     cost: Arg[int] = Arg(default=0)
     attack: Arg[int] = Arg(default=0)
     hp: Arg[int] = Arg(default=0)
+    min_cost: Arg[int | None] = Arg(default=None)
+    min_attack: Arg[int | None] = Arg(default=None)
+    min_hp: Arg[int | None] = Arg(default=None)
 
-    def execute(self, target: 'Card | Player', cost: int, attack: int, hp: int, *, ctx: ActionContext, **kwargs):
+    def execute(
+        self,
+        target: 'Card | Player',
+        cost: int,
+        attack: int,
+        hp: int,
+        min_cost: int | None,
+        min_attack: int | None,
+        min_hp: int | None,
+        *,
+        ctx: ActionContext,
+        **kwargs,
+    ):
+        if not isinstance(target, (Card, Player)):
+            return ActionOutcome(success=False)
+
         action_calls = []
 
+        if isinstance(target, Card) and target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         if isinstance(target, Monster):
-            target.buff(cost, attack, hp)
-            if target.hp <= 0 and target.zone == CardZone.BOARD:
+            target.buff(cost, attack, hp, min_cost, min_attack, min_hp)
+            if target.hp <= 0 and target.zone is CardZone.BOARD:
                 action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
 
         elif isinstance(target, Spell):
@@ -250,11 +353,53 @@ class Buff(Action):
             assert cost == 0 and attack == 0
             target.buff(hp=hp)
 
+            if target.hp <= 0:
+                action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
+
         return ActionOutcome(
             success=True,
             affected=[target],
             action_calls=action_calls,
         )
+
+
+def perform_card_draw(player: 'Player', card: 'Card', reason: str, *, ctx: 'ActionContext') -> ActionOutcome:
+    if card.zone is not CardZone.DECK or card.controller_id != player.id:
+        return ActionOutcome(success=False)
+
+    action_calls = []
+
+    # Turbo: This card will trigger its effect when drawn (except during game start or mulligan).
+    # Currently, cards drawn both during the game start and during the mulligan are added
+    # without using this action, so this check is currently redundant, but is still here for clarity.
+    if reason not in ('game_start', 'mulligan'):
+        effect = card.get_ability(Ability.TURBO)
+        if effect is not None:
+            action_calls.append(ActionCall(TriggerAbility(target=card, ability=Ability.TURBO), source=card))
+
+    if len(player.hand) >= 7:
+        return ActionOutcome(
+            success=True,
+            action_calls=[ActionCall(Overdraw(player=player, card=card), source=ctx.source), *action_calls],
+        )
+
+    ctx.game.move_card(card, controller_id=player.id, zone=CardZone.HAND)
+
+    return ActionOutcome(
+        success=True,
+        results=(
+            CardDrawnResult(
+                source_id=ctx.source.id,
+                player_id=player.id,
+                card_id=card.id,
+                card=card.to_snapshot(),
+                reason=reason,
+            ),
+        ),
+        affected=[card],
+        action_calls=action_calls,
+    )
+
 
 
 class Draw(Action):
@@ -263,32 +408,7 @@ class Draw(Action):
     reason: Arg[str] = Arg(default='effect')
 
     def execute(self, player: 'Player', card: 'Card', reason: str, *, ctx: ActionContext, **kwargs):
-        if card.zone is not CardZone.DECK or card.controller_id != player.id:
-            return ActionOutcome(success=False)
-
-        action_calls = []
-
-        # Turbo: This card will trigger its effect when drawn (except during game start or mulligan).
-        # Currently, cards drawn both during the game start and during the mulligan are added
-        # without using this action, so this check is currently redundant, but is still here for clarity.
-        if reason not in ('game_start', 'mulligan'):
-            effect = card.get_ability(Ability.TURBO)
-            if effect is not None:
-                action_calls.append(ActionCall(effect, source=card))
-
-        if len(player.hand) >= 7:
-            return ActionOutcome(
-                success=True,
-                action_calls=[ActionCall(Overdraw(player=player, card=card), source=ctx.source), *action_calls],
-            )
-
-        ctx.game.move_card(card, controller_id=player.id, zone=CardZone.HAND)
-
-        return ActionOutcome(
-            success=True,
-            affected=[card],
-            action_calls=action_calls,
-        )
+        return perform_card_draw(player, card, reason, ctx=ctx)
 
 
 class DrawNext(Action):
@@ -305,17 +425,12 @@ class DrawNext(Action):
             else:
                 raise ValueError(f"`from_pos` got invalid value: {from_pos}")
 
-            return ActionOutcome(
-                success=True,
-                action_calls=[ActionCall(Draw(player=player, card=card, reason=reason), source=ctx.source)],
-            )
+            return perform_card_draw(player, card, reason, ctx=ctx)
 
         else:
-            player.fatigue_counter += 1
-
             return ActionOutcome(
                 success=False,
-                action_calls=[ActionCall(Hit(target=player, damage=player.fatigue_counter, kind=DamageKind.FATIGUE), source=player)],
+                action_calls=[ActionCall(TakeFatigueDamage(player=player), source=player)],
             )
 
 
@@ -324,13 +439,39 @@ class Overdraw(Action):
     card: Arg['Card'] = Arg(many=True)
 
     def execute(self, player: 'Player', card: 'Card', *, ctx: ActionContext, **kwargs):
-        if ctx.game.check_overdraw_prevented(player):
-            return ActionOutcome(success=False)
+        overdraw_prevented, extra_actions = ctx.game.check_overdraw_prevented(player)
+        if overdraw_prevented:
+            return ActionOutcome(success=False, action_calls=extra_actions)
 
         ctx.game.move_card(card, controller_id=player.id, zone=CardZone.ERASED)
         return ActionOutcome(
             success=True,
+            results=(
+                CardOverdrawnResult(
+                    source_id=ctx.source.id,
+                    player_id=player.id,
+                    card_id=card.id,
+                    card=card.to_snapshot(),
+                ),
+            ),
             affected=[card],
+        )
+
+
+class TakeFatigueDamage(Action):
+    player: Arg['Player'] = Arg(many=True)
+
+    def execute(self, player: 'Player', *, ctx: ActionContext, **kwargs):
+        player.fatigue_counter += 1
+
+        return ActionOutcome(
+            success=True,
+            action_calls=[
+                ActionCall(
+                    Hit(target=player, damage=player.fatigue_counter, kind=DamageKind.FATIGUE),
+                    source=ctx.source,
+                ),
+            ],
         )
 
 
@@ -339,6 +480,12 @@ class AddKeyword(Action):
     keyword: Arg[CardKeyword] = Arg()
 
     def execute(self, target: Card, keyword: CardKeyword, *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         target.add_keyword(keyword)
         return ActionOutcome(success=True, affected=[target])
 
@@ -348,6 +495,12 @@ class RemoveKeyword(Action):
     keyword: Arg[CardKeyword] = Arg()
 
     def execute(self, target: Card, keyword: CardKeyword, *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         target.remove_keyword(keyword)
         return ActionOutcome(success=True, affected=[target])
 
@@ -358,6 +511,12 @@ class SetStatus(Action):
     value: Arg[int] = Arg(default=1)
 
     def execute(self, target: Card, status_id: CardStatusId, value: int, *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         target.set_status(status_id, value)
         return ActionOutcome(success=True, affected=[target])
 
@@ -367,6 +526,12 @@ class RemoveStatus(Action):
     status_id: Arg[CardStatusId] = Arg()
 
     def execute(self, target: Card, status_id: CardStatusId, *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         target.remove_status(status_id)
         return ActionOutcome(success=True, affected=[target])
 
@@ -375,6 +540,12 @@ class Silence(Action):
     target: Arg['Monster'] = Arg(many=True)
 
     def execute(self, target: Monster, *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Monster):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         success = target.silence()
         return ActionOutcome(
             success=success,
@@ -386,6 +557,12 @@ class Paralyze(Action):
     target: Arg['Monster'] = Arg(many=True)
 
     def execute(self, target: Monster, *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Monster):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         paralyzed_turns = target.get_status(CardStatusId.PARALYZED)
         if paralyzed_turns > 0:
             return ActionOutcome(success=False)
@@ -394,38 +571,112 @@ class Paralyze(Action):
         return ActionOutcome(success=True, affected=[target])
 
 
+class RemoveNegativeEffects(Action):
+    target: Arg['Monster'] = Arg(many=True)
+
+    def execute(self, target: Monster, *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Monster):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
+        target.remove_negative_effects()
+        return ActionOutcome(
+            success=True,
+            affected=[target],
+        )
+
+
 class SetPlayerHP(Action):
     player: Arg['Player'] = Arg()
     hp: Arg[int] = Arg()
 
     def execute(self, player: 'Player', hp: int, *, ctx: ActionContext, **kwargs):
+        if not isinstance(player, Player):
+            return ActionOutcome(success=False)
+
         player.set_hp(hp)
         return ActionOutcome(success=True, affected=[player])
 
 
-# TODO check for correctness with modifiers
 class SetStats(Action):
     target: Arg['Card'] = Arg(many=True)
     cost: Arg[int | None] = Arg(default=None)
     attack: Arg[int | None] = Arg(default=None)
     hp: Arg[int | None] = Arg(default=None)
 
-    def execute(self, target: 'Card', cost: int | None, attack: int | None, hp: int | None, *, ctx: ActionContext, **kwargs):
+    def execute(
+        self,
+        target: 'Card',
+        cost: int | None,
+        attack: int | None,
+        hp: int | None,
+        *,
+        ctx: ActionContext,
+        **kwargs,
+    ):
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         action_calls = []
 
         if attack is not None:
             assert isinstance(target, Monster)
-            target.buff(attack - target.attack)
+            target.buff(attack=attack - (target.base.attack + target.buffs.attack))
 
         if hp is not None:
             assert isinstance(target, Monster)
-            target.buff(hp - target.hp)
+            target.buff(hp=hp - (target.base.hp + target.buffs.max_hp))
 
-            if hp <= 0 and target.zone == CardZone.BOARD:
+            if target.hp <= 0 and target.zone is CardZone.BOARD:
                 action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
 
         if cost is not None:
-            target.buff(cost - target.cost)
+            target.buff(cost=cost - (target.base.cost + target.buffs.cost))
+
+        return ActionOutcome(
+            success=True,
+            affected=[target],
+            action_calls=action_calls,
+        )
+
+
+class SetBaseStats(Action):
+    target: Arg['Card'] = Arg(many=True)
+    cost: Arg[int | None] = Arg(default=None)
+    attack: Arg[int | None] = Arg(default=None)
+    hp: Arg[int | None] = Arg(default=None)
+
+    def execute(
+        self,
+        target: 'Card',
+        cost: int | None,
+        attack: int | None,
+        hp: int | None,
+        *,
+        ctx: ActionContext,
+        **kwargs,
+    ):
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
+        action_calls = []
+
+        if isinstance(target, Monster):
+            target.set_base_stats(cost=cost, attack=attack, hp=hp)
+
+            if (hp is not None) and (target.hp <= 0) and (target.zone is CardZone.BOARD):
+                action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
+
+        else:
+            target.set_base_stats(cost=cost)
 
         return ActionOutcome(
             success=True,
@@ -438,10 +689,16 @@ class SwapStats(Action):
     target: Arg['Monster'] = Arg(many=True)
 
     def execute(self, target: Monster, *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         action_calls = []
         target.buff(attack=target.hp - target.attack, hp=target.attack - target.hp)
 
-        if target.hp <= 0 and target.zone == CardZone.BOARD:
+        if target.hp <= 0 and target.zone is CardZone.BOARD:
             action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
 
         return ActionOutcome(
@@ -456,12 +713,18 @@ class HalveStats(Action):
     round_up: Arg['bool'] = Arg()
 
     def execute(self, target: Monster, round_up: bool, *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         action_calls = []
 
         round_func = math.floor if round_up else math.ceil  # negative stat buffs are inverted
         target.buff(attack=-round_func(target.attack / 2), hp=-round_func(target.hp / 2))
 
-        if target.hp <= 0 and target.zone == CardZone.BOARD:
+        if target.hp <= 0 and target.zone is CardZone.BOARD:
             action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
 
         return ActionOutcome(
@@ -478,23 +741,38 @@ class Move(Action):
     pos: Arg['int | str | None'] = Arg(default=None)  # board/deck index, or one of: 'top', 'bottom', 'shuffle'
 
     def execute(self, target: 'Card', zone: CardZone, controller: 'Player | None', pos: 'int | str | None', *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+
+        # Cards aren't allowed to be moved from ERASED zone
+        if target.zone is CardZone.ERASED:
+            return ActionOutcome(success=False)
+
+        # Dustpile monsters can only be erased
+        if target.zone is CardZone.DUSTPILE:
+            return ActionOutcome(success=False)
+
+        # Kill() should be used instead
+        if zone is CardZone.DUSTPILE:
+            return ActionOutcome(success=False)
+
         if controller is None:
             controller = ctx.game.players[target.controller_id]
 
         if zone == CardZone.HAND:
-            if target.zone == CardZone.DECK and target.controller_id == controller.id:
+            if target.zone is CardZone.DECK and target.controller_id == controller.id:
                 return ActionOutcome(
                     success=True,
                     action_calls=[ActionCall(Draw(player=controller, card=target), source=ctx.source)],
                 )
 
             if len(controller.hand) >= 7:
-                if target.zone == CardZone.BOARD:
+                if target.zone is CardZone.BOARD:
                     return ActionOutcome(
                         success=True,
                         action_calls=[ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source)],
                     )
-                elif target.zone == CardZone.DECK:
+                elif target.zone is CardZone.DECK:
                     return ActionOutcome(
                         success=True,
                         action_calls=[ActionCall(Overdraw(player=controller, card=target), source=ctx.source)],
@@ -506,6 +784,36 @@ class Move(Action):
         return ActionOutcome(success=True, affected=[target])
 
 
+class SwapCards(Action):
+    card1: Arg['Card'] = Arg()
+    card2: Arg['Card'] = Arg()
+
+    def execute(self, card1: 'Card', card2: 'Card', *, ctx: ActionContext, **kwargs):
+        if (not isinstance(card1, Card)) or (not isinstance(card2, Card)):
+            return ActionOutcome(success=False)
+
+        if card1.controller_id == card2.controller_id:
+            return ActionOutcome(success=False)
+
+        if card1.zone is not card2.zone:
+            return ActionOutcome(success=False)
+
+        zone = card1.zone
+        if zone not in (CardZone.HAND, CardZone.DECK):
+            return ActionOutcome(success=False)
+
+        ctx.game.remove_card_from_current_zone(card1)
+        ctx.game.remove_card_from_current_zone(card2)
+        ctx.game.add_card_to_zone(card1, card2.controller_id, zone)
+        ctx.game.add_card_to_zone(card2, card1.controller_id, zone)
+        ctx.game.rules.invalidate()
+
+        return ActionOutcome(
+            success=True,
+            affected=[card1, card2],
+        )
+
+
 class Summon(Action):
     card: Arg['Monster'] = Arg(many=True)
     controller: Arg['Player'] = Arg()
@@ -514,34 +822,54 @@ class Summon(Action):
     hp: Arg[int | None] = Arg(default=None)
     is_played: Arg[bool] = Arg(default=False)
 
-    def execute(self, card: 'Monster', controller: 'Player', pos: int | None, attack: int | None, hp: int | None, is_played: bool, *, ctx: ActionContext, **kwargs):
+    def execute(
+        self,
+        card: 'Monster',
+        controller: 'Player',
+        pos: int | None,
+        attack: int | None,
+        hp: int | None,
+        is_played: bool,
+        *,
+        ctx: ActionContext,
+        **kwargs,
+    ):
+        if not isinstance(card, Monster):
+            return ActionOutcome(success=False)
+
         if len(controller.board) == controller.board.MAX_CARDS:
             return ActionOutcome(success=False)
 
-        if pos is None:
-            try:
-                pos = controller.board.get_empty_slot_index()
-            except StopIteration:
-                return ActionOutcome(success=False)
-
-        else:
-            if not (0 <= pos < controller.board.MAX_CARDS):
-                return ActionOutcome(success=False)
-            if controller.board[pos] is not None:
-                return ActionOutcome(success=False)
+        ok, pos, reason = ctx.game.resolve_summon_position(controller, pos)
+        if not ok:
+            return ActionOutcome(success=False)
 
         if (attack is not None) or (hp is not None):
             card.set_base_stats(attack=attack, hp=hp)
 
         ctx.game.move_card(card, controller.id, CardZone.BOARD, pos=pos)
 
+        extra_results = []
+        if is_played:
+            extra_results = [
+                CardPlayedResult(
+                    source_id=ctx.source.id,
+                    player_id=controller.id,
+                    card_id=card.id,
+                    card=card.to_snapshot(),
+                ),
+            ]
+
         return ActionOutcome(
             success=True,
             results=(
+                *extra_results,
                 MonsterSummonedResult(
                     source_id=ctx.source.id,
+                    player_id=controller.id,
                     monster_id=card.id,
                     monster=card.to_snapshot(),
+                    target=ctx.env['magic_effect_target'].to_snapshot() if ctx.env.get('magic_effect_target', None) is not None else None,
                     is_played=is_played,
                 ),
             ),
@@ -559,6 +887,9 @@ class Play(Action):
     allow_cancel: Arg[bool] = Arg(default=False)
 
     def execute(self, player: 'Player', card: 'Card', pos: int | None, target: Entity | None, allow_cancel: bool, *, ctx: ActionContext, **kwargs):
+        if not isinstance(card, Card):
+            return ActionOutcome(success=False)
+
         if card.controller_id != player.id or card.zone is not CardZone.HAND:
             return ActionOutcome(success=False)
 
@@ -567,18 +898,9 @@ class Play(Action):
             return ActionOutcome(success=False)
 
         if isinstance(card, Monster):
-            # TODO unsure if this part needs to be duplicated here and in Summon()
-            if pos is None:
-                try:
-                    pos = player.board.get_empty_slot_index()
-                except StopIteration:
-                    return ActionOutcome(success=False)
-
-            else:
-                if not (0 <= pos < player.board.MAX_CARDS):
-                    return ActionOutcome(success=False)
-                if player.board[pos] is not None:
-                    return ActionOutcome(success=False)
+            ok, pos, reason = ctx.game.resolve_summon_position(player, pos)
+            if not ok:
+                return ActionOutcome(success=False)
 
         skip_magic = False
 
@@ -628,57 +950,99 @@ class Play(Action):
                     return ActionOutcome(success=False)
 
         spend_gold_calls = [
-            ActionCall(SpendGold(player=player, amount=cost, spent_on_spell=isinstance(card, Spell)), source=card),
+            ActionCall(
+                SpendGold(
+                    player=player,
+                    amount=cost,
+                    reason='play_spell' if isinstance(card, Spell) else 'play_monster',
+                    card=card.to_snapshot(),
+                    is_generated=card.is_generated,
+                ),
+                source=card,
+            ),
         ]
 
-        magic_calls = []
-        if isinstance(card, Monster) and not skip_magic:
-            # Synergy: The monster will trigger its effect when played
-            # and if an ally monster of the same tribe has been played this turn.
-            synergy_triggered = False
-            if not player.tribes_played_this_turn.isdisjoint((Tribe.ALL, *card.tribes)):
-                synergy_effect = card.get_ability(Ability.SYNERGY)
-                if synergy_effect is not None:
-                    synergy_triggered = True
-                    magic_calls.append(
-                        ActionCall(synergy_effect, source=card, env={'target': target}),
-                    )
-
-            player.tribes_played_this_turn.update(card.tribes)
-
-            # Magic: The card will trigger its effect when played.
-            effect = card.get_ability(Ability.MAGIC)
-            if effect is not None:
-                # When both Magic and Synergy effects trigger, Magic effect always triggers first.
-                magic_calls.insert(
-                    0,
-                    ActionCall(effect, source=card, env={'target': target, 'synergy_triggered': synergy_triggered}),
-                )
-
-        # TODO unsure if needed, currently it's here to allow LOOP to correctly trigger when there are 7 cards in hand
+        # Move the played card out of hand temporarily.
+        # This lets a Loop copy enter the hand even if the hand
+        # had 7 cards before the play, because the played card freed one slot.
         ctx.game.move_card(card, player.id, CardZone.INVALID)
 
         loop_calls = []
+        loop_copy = None
         loop_counters = card.get_status(CardStatusId.LOOP)
+
         if loop_counters >= 1:
-            copy = ctx.game.create_card_copy(
+            loop_copy = ctx.game.create_card_copy(
                 card,
                 controller_id=card.controller_id,
                 creator_id=card.id,
                 creator_base_identity=card.base_identity,
             )
-            copy.set_status(CardStatusId.LOOP, loop_counters - 1)
-            loop_calls.append(ActionCall(Move(target=copy, zone=CardZone.HAND), source=card))
+            loop_copy.set_status(CardStatusId.LOOP, loop_counters - 1)
+            loop_calls.append(ActionCall(Move(target=loop_copy, zone=CardZone.HAND), source=card))
 
         if isinstance(card, Monster):
+            # Synergy: The monster will trigger its effect when played
+            # and if an ally monster of the same tribe has been played this turn.
+            def tribes_overlap(a: set[Tribe] | tuple[Tribe, ...], b: set[Tribe] | tuple[Tribe, ...]) -> bool:
+                if (not a) or (not b):
+                    return False
+
+                if (Tribe.ALL in a) or (Tribe.ALL in b):
+                    return True
+
+                return not set(a).isdisjoint(b)
+
+            synergy_triggered = False
+            if len(card.tribes) > 0 and tribes_overlap(card.tribes, player.tribes_played_this_turn):
+                synergy_triggered = True
+
+            magic_calls = []
+            synergy_calls = []
+
+            if not skip_magic:
+                # Magic: The card will trigger its effect when played.
+                effect = card.get_ability(Ability.MAGIC)
+                if effect is not None:
+                    magic_calls.append(
+                        ActionCall(
+                            TriggerAbility(target=card, ability=Ability.MAGIC),
+                            source=card,
+                            env={'target': target, 'loop_copy': loop_copy, 'synergy_triggered': synergy_triggered},
+                        )
+                    )
+
+                if synergy_triggered:
+                    synergy_effect = card.get_ability(Ability.SYNERGY)
+                    if synergy_effect is not None:
+                        synergy_calls.append(
+                            ActionCall(
+                                TriggerAbility(target=card, ability=Ability.SYNERGY),
+                                source=card,
+                                env={'target': target, 'loop_copy': loop_copy},
+                            )
+                        )
+
+            player.tribes_played_this_turn.update(card.tribes)
+
             return ActionOutcome(
                 success=True,
                 affected=[card],
                 action_calls=[
                     *spend_gold_calls,
-                    ActionCall(Summon(card=card, controller=player, pos=pos, is_played=True), source=player),
                     *loop_calls,
+                    ActionCall(
+                        Summon(
+                            card=card,
+                            controller=player,
+                            pos=pos,
+                            is_played=True,
+                        ),
+                        source=player,
+                        env={'magic_effect_target': target},  # used only for result logging
+                    ),
                     *magic_calls,
+                    *synergy_calls,
                 ],
             )
 
@@ -689,7 +1053,11 @@ class Play(Action):
             if card.base.cost >= 2:
                 for effect, source in ctx.game.collect_ability_listener_effects(Ability.SHOCK, player=player):
                     shock_calls.append(
-                        ActionCall(effect, source=source, env={'spell_cost': cost}),
+                        ActionCall(
+                            TriggerAbility(target=source, ability=Ability.SHOCK),
+                            source=source,
+                            env={'trigger_card': card},
+                        )
                     )
 
             return ActionOutcome(
@@ -697,7 +1065,17 @@ class Play(Action):
                 affected=[card],
                 action_calls=[
                     *spend_gold_calls,
-                    ActionCall(Cast(card=card, controller=player, effect_target=target), source=player),
+                    *loop_calls,
+                    ActionCall(
+                        Cast(
+                            card=card,
+                            controller=player,
+                            effect_target=target,
+                            is_played=True,
+                        ),
+                        source=player,
+                        env={'loop_copy': loop_copy},
+                    ),
                     *shock_calls,
                 ],
             )
@@ -706,18 +1084,81 @@ class Play(Action):
 class Cast(Action):
     card: Arg['Spell'] = Arg(many=True)
     controller: Arg['Player'] = Arg()
-    effect_target: Arg['Entity | None'] = Arg()
+    effect_target: Arg[Entity | Literal['random'] | None] = Arg(default=None)
+    is_played: Arg[bool] = Arg(default=False)
 
-    def execute(self, card: Spell, controller: 'Player', effect_target: 'Entity | None', *, ctx: ActionContext, **kwargs):
+    def execute(
+        self,
+        card: Spell,
+        controller: 'Player',
+        effect_target: Entity | Literal['random'] | None,
+        is_played: bool,
+        *,
+        ctx: ActionContext,
+        **kwargs
+    ):
+        if not isinstance(card, Card):
+            return ActionOutcome(success=False)
+
+        # If a spell is cast by an effect, any choices caused by this `Cast` should be made randomly.
+        if not is_played:
+            ctx.env['_auto_choose'] = True
+
+        should_pick_random_target = (
+            effect_target == 'random'
+            or (
+                (not is_played)
+                and (card.targets is not None)
+                and (effect_target is None)
+            )
+        )
+
+        if should_pick_random_target:
+            options = ctx.game.play_target_options(card=card, player=controller)
+            if len(options) == 0:
+                effect_target = None
+            else:
+                effect_target = ctx.game.rng.choice(options)
+
         ctx.game.move_card(card, controller.id, CardZone.STACK)
 
         magic_calls = []
-        effect = card.get_ability(Ability.MAGIC)
-        if effect is not None:
-            magic_calls.append(ActionCall(effect, source=card, env={'target': effect_target}))
+        skip_magic = (card.targets is not None) and (effect_target is None)
+        if not skip_magic:
+            effect = card.get_ability(Ability.MAGIC)
+            if effect is not None:
+                magic_calls.append(
+                    ActionCall(
+                        TriggerAbility(target=card, ability=Ability.MAGIC),
+                        source=card,
+                        env={'target': effect_target, 'loop_copy': ctx.env.get('loop_copy', None)},
+                    )
+                )
+
+        extra_results = []
+        if is_played:
+            extra_results = [
+                CardPlayedResult(
+                    source_id=ctx.source.id,
+                    player_id=controller.id,
+                    card_id=card.id,
+                    card=card.to_snapshot(),
+                ),
+            ]
 
         return ActionOutcome(
             success=True,
+            results=(
+                *extra_results,
+                SpellCastResult(
+                    source_id=ctx.source.id,
+                    player_id=controller.id,
+                    card_id=card.id,
+                    card=card.to_snapshot(),
+                    target=effect_target.to_snapshot() if effect_target is not None else None,
+                    is_played=is_played,
+                )
+            ),
             affected=[card],
             action_calls=[
                 *magic_calls,
@@ -730,8 +1171,8 @@ class RemoveCardFromStack(Action):
     card: Arg['Card'] = Arg()
 
     def execute(self, card: 'Card', *, ctx: ActionContext, **kwargs):
-        assert card.zone == CardZone.STACK, f"Card is not on stack: {card.zone}"
-        ctx.game.move_card(card, card.controller_id, CardZone.DUSTPILE)
+        assert card.zone is CardZone.STACK, f"Card is not on stack: {card.zone}"
+        ctx.game.move_card(card, card.controller_id, CardZone.INVALID)
         return ActionOutcome(success=True, affected=[card])
 
 
@@ -740,14 +1181,39 @@ class TriggerAbility(Action):
     ability: Arg[Ability] = Arg()
 
     def execute(self, target: Entity, ability: Ability, *, ctx: ActionContext, **kwargs):
+        if ability is Ability.MAGIC and isinstance(target, Card):
+            if target.has_need_condition() and not ctx.game.card_need_fulfilled(target):
+                return ActionOutcome(success=True)
+
         effect = target.get_ability(ability)
         if effect is None:
             return ActionOutcome(success=True)
 
         return ActionOutcome(
             success=True,
-            action_calls=[ActionCall(effect, source=target)],
+            results=(
+                AbilityTriggeredResult(
+                    source_id=target.id,
+                    entity_id=target.id,
+                    entity=target.to_snapshot(),
+                    ability=ability,
+                ),
+            ),
+            action_calls=[ActionCall(effect, source=target, vars=ctx.vars.copy())],
         )
+
+
+class ToggleAbility(Action):
+    target: Arg['Monster'] = Arg(many=True)
+    ability: Arg[Ability] = Arg()
+    enabled: Arg[bool] = Arg()
+
+    def execute(self, target: Monster, ability: Ability, enabled: bool, *, ctx: ActionContext, **kwargs):
+        if target.zone is not CardZone.BOARD:
+            return ActionOutcome(success=False)
+
+        target.toggle_ability(CardToggleableAbility(ability.value), enabled)
+        return ActionOutcome(success=True, affected=[target])
 
 
 class Catch(Action):
@@ -755,6 +1221,15 @@ class Catch(Action):
     card_to_catch: Arg['Card'] = Arg()
 
     def execute(self, catcher: 'Monster', card_to_catch: 'Card', *, ctx: ActionContext, **kwargs):
+        if not isinstance(card_to_catch, Card):
+            return ActionOutcome(success=False)
+
+        if catcher.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
+        if card_to_catch.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         # If catcher already has a caught card, fizzle.
         if catcher.caught_card is not None:
             return ActionOutcome(success=False)
@@ -773,6 +1248,9 @@ class ReleaseCaughtCard(Action):
     var: Arg['Var'] = Arg(raw=True)  # raw=True prevents turning `var` into a value
 
     def execute(self, catcher: 'Monster', var: 'Var', *, ctx: ActionContext, **kwargs):
+        if not isinstance(catcher, Monster):
+            return ActionOutcome(success=False)
+
         if catcher.caught_card is None:
             return ActionOutcome(success=False)
 
@@ -790,6 +1268,12 @@ class Erase(Action):
     target: Arg['Card'] = Arg(many=True)
 
     def execute(self, target: 'Card', *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+
+        if target.zone is CardZone.ERASED:
+            return ActionOutcome(success=False)
+
         ctx.game.move_card(target, target.controller_id, CardZone.ERASED)
         return ActionOutcome(success=True, affected=[target])
 
@@ -799,13 +1283,27 @@ class TransformCard(Action):
     new_card: Arg['Card'] = Arg()
 
     def execute(self, target: 'Card', new_card: 'Card', *, ctx: ActionContext, **kwargs):
-        assert new_card.zone == CardZone.INVALID
+        if not isinstance(target, Card):
+            return ActionOutcome(success=False)
+        if not isinstance(new_card, Card):
+            return ActionOutcome(success=False)
+
+        if target.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
+        assert new_card.zone is CardZone.INVALID
 
         controller_id = target.controller_id
         zone = target.zone
-        pos = getattr(target, 'pos', None)
 
-        ctx.game.move_card(target, controller_id, CardZone.ERASED)
+        if target.zone is CardZone.BOARD:
+            pos = target.pos
+        elif target.zone is CardZone.DECK:
+            pos = ctx.game.player(controller_id).deck.get_card_index(target)
+        else:
+            pos = None
+
+        ctx.game.move_card(target, controller_id, CardZone.INVALID)
         ctx.game.move_card(new_card, controller_id, zone, pos=pos)
 
         return ActionOutcome(success=True, affected=[target, new_card])
@@ -816,6 +1314,11 @@ class Attack(Action):
     defender: Arg['Monster | Player'] = Arg(many=True)
 
     def execute(self, attacker: 'Monster', defender: 'Monster | Player', *, ctx: ActionContext, **kwargs):
+        if not isinstance(attacker, Monster):
+            return ActionOutcome(success=False)
+        if not isinstance(defender, (Monster, Player)):
+            return ActionOutcome(success=False)
+
         if attacker.zone is not CardZone.BOARD:
             return ActionOutcome(success=False)
         if isinstance(defender, Monster) and defender.zone is not CardZone.BOARD:
@@ -835,11 +1338,24 @@ class Attack(Action):
                 continue
 
             support_calls.append(
-                ActionCall(effect, source=source, env={'attacker': attacker}),
+                ActionCall(
+                    TriggerAbility(target=source, ability=Ability.SUPPORT),
+                    source=source,
+                    env={'attacker': attacker},
+                )
             )
 
         return ActionOutcome(
             success=True,
+            results=(
+                AttackDeclaredResult(
+                    source_id=ctx.source.id,
+                    attacker_id=attacker.id,
+                    attacker=attacker.to_snapshot(),
+                    defender_id=defender.id,
+                    defender=defender.to_snapshot(),
+                ),
+            ),
             affected=[attacker, defender],
             action_calls=[
                 *support_calls,
@@ -914,7 +1430,7 @@ class CombatDamage(Action):
             affected=[attacker, defender],
             # If both monsters die from simultaneous combat damage, the attacker's
             # Kill/Dust chain must resolve before the defender's.
-            action_calls=[*attacker_res.extra_actions, *defender_res.extra_actions],
+            action_calls=[*defender_res.extra_actions, *attacker_res.extra_actions],
         )
 
 
@@ -927,14 +1443,14 @@ class AttackAftermath(Action):
             # CombatDamage action failed
             return ActionOutcome(success=False)
 
-        if attacker.zone == CardZone.BOARD:
+        if attacker.zone is CardZone.BOARD:
             attacker.remove_keyword(CardKeyword.CHARGE)
             attacker.remove_keyword(CardKeyword.HASTE)
 
         return ActionOutcome(
             success=True,
             results=(
-                AttackAftermathResult(
+                AttackResolvedResult(
                     source_id=ctx.source.id,
                     attacker_id=attacker.id,
                     attacker=attacker.to_snapshot(),
@@ -954,6 +1470,12 @@ class RefreshAttacks(Action):
     target: Arg['Monster'] = Arg(many=True)
 
     def execute(self, target: 'Monster', *, ctx: ActionContext, **kwargs):
+        if not isinstance(target, Monster):
+            return ActionOutcome(success=False)
+
+        if target.zone is not CardZone.BOARD:
+            return ActionOutcome(success=False)
+
         target.has_attacked = False
 
         return ActionOutcome(
@@ -967,6 +1489,9 @@ class EarnGold(Action):
     amount: Arg[int] = Arg()
 
     def execute(self, player: 'Player', amount: int, *, ctx: ActionContext, **kwargs):
+        if not isinstance(player, Player):
+            return ActionOutcome(success=False)
+
         if amount <= 0:
             return ActionOutcome(success=False)
 
@@ -977,10 +1502,23 @@ class EarnGold(Action):
 class SpendGold(Action):
     player: Arg['Player'] = Arg(many=True)
     amount: Arg[int] = Arg()
-    spent_on_spell: Arg[bool] = Arg(default=False)
     allow_partial: Arg[bool] = Arg(default=False)
+    reason: Arg[GoldSpendReason] = Arg(default='effect')
+    card: Arg[CardSnapshot | None] = Arg(default=None)
+    is_generated: Arg[bool] = Arg(default=False)
 
-    def execute(self, player: 'Player', amount: int, spent_on_spell: bool, allow_partial: bool, *, ctx: ActionContext, **kwargs):
+    def execute(
+        self,
+        player: 'Player',
+        amount: int,
+        allow_partial: bool,
+        reason: GoldSpendReason,
+        card: CardSnapshot | None,
+        is_generated: bool,
+        *,
+        ctx: ActionContext,
+        **kwargs,
+    ):
         assert amount >= 0
 
         if player.gold < amount:
@@ -992,16 +1530,21 @@ class SpendGold(Action):
             else:
                 return ActionOutcome(success=False)
 
+        if amount == 0:
+            return ActionOutcome(success=True)
+
         player.gold -= amount
 
         return ActionOutcome(
             success=True,
             results=[
-                SpentGoldResult(
+                GoldSpentResult(
                     source_id=ctx.source.id,
                     player_id=player.id,
                     amount=amount,
-                    spent_on_spell=spent_on_spell,
+                    reason=reason,
+                    card=card,
+                    is_generated=is_generated,
                 ),
             ],
             affected=[player],
@@ -1019,11 +1562,45 @@ class SetGold(Action):
 
 class AddArtifact(Action):
     player: Arg['Player'] = Arg(many=True)
-    artifact: Arg['Artifact'] = Arg()
+    artifact: Arg['type[Artifact]'] = Arg()
 
-    def execute(self, player: 'Player', artifact: 'Artifact', *, ctx: ActionContext, **kwargs):
-        player.artifacts.append(artifact)
+    def execute(self, player: 'Player', artifact: 'type[Artifact]', *, ctx: ActionContext, **kwargs):
+        if any(existing.name == artifact.name for existing in player.artifacts):
+            return ActionOutcome(success=False)
+
+        new_artifact_obj = artifact(id=ctx.game.alloc_entity_id(), controller_id=player.id)
+        ctx.game.register_entity(new_artifact_obj, entity_id=new_artifact_obj.id)
+
+        player.artifacts.append(new_artifact_obj)
+
+        return ActionOutcome(success=True, affected=[new_artifact_obj])
+
+
+class ToggleArtifact(Action):
+    artifact: Arg['Artifact'] = Arg()
+    enabled: Arg[bool] = Arg()
+
+    def execute(self, artifact: 'Artifact', enabled: bool, *, ctx: ActionContext, **kwargs):
+        artifact.toggle(enabled)
         return ActionOutcome(success=True, affected=[artifact])
+
+
+class TransformArtifact(Action):
+    player: Arg['Player'] = Arg()
+    artifact: Arg['Artifact'] = Arg()
+    new_artifact: Arg['type[Artifact]'] = Arg()
+
+    def execute(self, player: 'Player', artifact: 'Artifact', new_artifact: 'type[Artifact]', *, ctx: ActionContext, **kwargs):
+        if artifact not in player.artifacts:
+            return ActionOutcome(success=False)
+
+        new_artifact_obj = new_artifact(id=ctx.game.alloc_entity_id(), controller_id=player.id)
+        ctx.game.register_entity(new_artifact_obj, entity_id=new_artifact_obj.id)
+
+        index = player.artifacts.index(artifact)
+        player.artifacts[index] = new_artifact_obj
+
+        return ActionOutcome(success=True, affected=[artifact, new_artifact_obj])
 
 
 class UpdateArtifactCounter(Action):
@@ -1071,15 +1648,13 @@ class AdvanceTurn(Action):
 
 
 class ResolveScheduledEffectsAction(Action):
-    player: Arg['Player'] = Arg()
-
-    def execute(self, player: 'Player', *, ctx: ActionContext, **kwargs):
+    def execute(self, *, ctx: ActionContext, **kwargs):
         action_calls = []
         for effect in ctx.game.scheduled_effects:
             entity = ctx.game.entity(effect.entity_id)
             action_calls.append(
                 ActionCall(
-                    getattr(entity, effect.name),
+                    TriggerAbility(target=entity, ability=Ability(effect.name)),
                     source=entity,
                     env=effect.env,
                     vars=effect.vars,

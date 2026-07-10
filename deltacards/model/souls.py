@@ -1,6 +1,7 @@
 from deltacards.actions.standard import *
 from deltacards.model.entity import Entity
 from deltacards.model.enums import PlayerId
+from deltacards.model.snapshots import SoulSnapshot
 
 SOULS = {}
 
@@ -34,3 +35,10 @@ class Soul(Entity):
     @property
     def base_identity(self) -> tuple[str, int]:
         return 'soul', [soul_id for soul_id, soul_cls in SOULS.items() if self.__class__ is soul_cls][0]
+
+    def to_snapshot(self) -> SoulSnapshot:
+        return SoulSnapshot(
+            id=self.id,
+            name=self.__class__.__name__,
+            controller_id=self.controller_id,
+        )

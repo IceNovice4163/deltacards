@@ -249,14 +249,12 @@ class TestRig:
             deck=p1_cards,
             soul_id=cfg.soul_id,
             artifact_ids=cfg.p1_artifacts,
-            is_first_turn=True,
         )
         p2 = Player(
             PlayerId.P2,
             deck=p2_cards,
             soul_id=cfg.soul_id,
             artifact_ids=cfg.p2_artifacts,
-            is_first_turn=False,
         )
 
         p1.gold = cfg.starting_gold - 1  # first turn gives 1 gold

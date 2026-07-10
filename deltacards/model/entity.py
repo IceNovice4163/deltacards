@@ -1,7 +1,7 @@
-import inspect
 from abc import ABC, ABCMeta
-from typing import Any, Iterable, TYPE_CHECKING, Type, get_args
+from typing import Any, Iterable, TYPE_CHECKING, Type
 
+from deltacards.actions.methods import ActionProxy
 from deltacards.engine.modifiers import IntModifier
 from deltacards.model.enums import Ability
 
@@ -20,28 +20,21 @@ class EntityMeta(ABCMeta):
 
         cls = super().__new__(mcls, name, bases, attrs)
 
-        annotations = inspect.get_annotations(cls)
-        for attr_name in annotations:
-            v = getattr(cls, attr_name, None)
-            if hasattr(v, 'eval'):  # check if variable
-                args = get_args(annotations[attr_name])
-                assert len(args) == 1, "Variable type must be provided"
-                v.type = args[0]
-
-                cls.var_definitions[attr_name] = v
-
         for ability in Ability:
             effect = getattr(cls, ability.value, None)
             if effect is not None:
                 cls._abilities[ability] = effect
 
+        cls._need_condition = getattr(cls, 'need', None)
+
         return cls
 
 
 class Entity(ABC, metaclass=EntityMeta):
-    __slots__ = 'id'
+    __slots__ = 'id', 'state'
 
     _abilities: dict
+    _need_condition: Any | None
 
     var_definitions: dict
     pre_event_handlers: dict
@@ -49,6 +42,12 @@ class Entity(ABC, metaclass=EntityMeta):
 
     def __init__(self, id: int):
         self.id = id
+
+        self.state: dict[str, Any] = {}
+
+    @property
+    def actions(self) -> ActionProxy:
+        return ActionProxy(self)
 
     @property
     def base_identity(self) -> tuple[str, int]:
@@ -61,14 +60,17 @@ class Entity(ABC, metaclass=EntityMeta):
 
         if hasattr(effect, '__get__'):
             return effect.__get__(self, type(self))
-        else:
-            return effect
 
-    def has_ability(self, ability: Ability):
+        return effect
+
+    def has_ability(self, ability: Ability) -> bool:
         return self._abilities.get(ability) is not None
 
     def iter_modifiers(self, game: 'Game') -> Iterable[IntModifier]:
         return ()
+
+    def to_snapshot(self):
+        raise NotImplementedError
 
     def serialize(self) -> dict[str, Any]:
         raise NotImplementedError

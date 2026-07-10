@@ -50,6 +50,7 @@ def _snapshot_bucket(player: Player, bucket: BucketName) -> list[TimedWindowEntr
                 kwargs={'owner': player},
             )
             for artifact in list(player.artifacts)
+            if artifact.active
         ]
 
     raise ValueError(f"Invalid bucket: {bucket}")
@@ -75,7 +76,7 @@ def _resolve_valid_source(entry: TimedWindowEntry, ctx: ActionContext, player: P
 
     if entry.bucket == 'artifact':
         for artifact in player.artifacts:
-            if artifact.id == entry.source_id:
+            if artifact.id == entry.source_id and artifact.active:
                 return artifact
         return None
 
@@ -124,7 +125,7 @@ def run_player_end_turn_window(ctx: ActionContext, player: Player):
         monster.on_turn_end()
 
     # Resolve pending Delay effects
-    yield ResolveScheduledEffectsAction(player=player)
+    yield ResolveScheduledEffectsAction()
 
     # Resolve Turn End effects
     yield from run_timed_ability_window(ctx=ctx, player=player, ability=Ability.TURN_END)

@@ -1,5 +1,6 @@
 import json
 from importlib import import_module
+from pathlib import Path
 
 from deltacards.content.library import LIBRARY
 
@@ -19,6 +20,8 @@ CONTENT_MODULES = [
     'deltacards.content.souls.standard',
 ]
 
+CARDS_JSON = Path(__file__).resolve().parents[2] / 'cards.json'
+
 
 def load():
     try:
@@ -26,9 +29,9 @@ def load():
     except KeyError:
         pass
     else:
-        raise RuntimeError("Library is already loaded.")
+        return
 
-    with open('cards.json') as f:
+    with open(CARDS_JSON) as f:
         LIBRARY.load_templates(json.load(f))
 
     for name in CONTENT_MODULES:

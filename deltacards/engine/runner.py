@@ -6,13 +6,16 @@ from deltacards.actions.standard import (
     Play,
     PlayerEndTurnAction,
     PlayerStartTurnAction,
+    TriggerAbility,
 )
 from deltacards.actions.standard import Attack as AttackAction
+from deltacards.engine.action_log import ActionLogRecord
 from deltacards.engine.game import Game
 from deltacards.model.artifacts import ARTIFACTS
-from deltacards.model.cards import CardZone
+from deltacards.model.cards import CardZone, Monster, Spell
 from deltacards.model.containers import Deck
-from deltacards.model.enums import PlayerId
+from deltacards.model.enums import Ability, PlayerId
+from deltacards.model.player import Player
 from deltacards.model.requests import (
     Attack, ChoiceResponse, EndTurn, EngineInput, MulliganPrompt, MulliganResponse,
     PendingChoiceRequest, PendingMulliganRequest, PendingPlayerActionRequest, PendingRequest,
@@ -66,14 +69,22 @@ class EngineUpdate:
     results: list[ActionResult]
     pending: tuple[PendingRequest, ...]
     game_over: bool
+    log_records: list[ActionLogRecord] | None = None
 
 
 class GameRunner:
     MAX_STEPS = 1_000
 
-    def __init__(self, game: Game, no_initial_shuffle: bool = False):
+    def __init__(
+        self,
+        game: Game,
+        *,
+        no_initial_shuffle: bool = False,
+        validate_invariants: bool = True,
+    ):
         self.game = game
         self.no_initial_shuffle = no_initial_shuffle  # used for testing
+        self.validate_invariants = validate_invariants
 
     # --------------------
     # Setup phase
@@ -164,8 +175,8 @@ class GameRunner:
                 card = player.deck.get(card_id)
                 self.game.move_card(card, player_id, CardZone.HAND)
 
-                if not self.no_initial_shuffle:
-                    self.game.rng.shuffle(player.deck.cards)
+            if not self.no_initial_shuffle:
+                self.game.rng.shuffle(player.deck.cards)
 
             for _ in range(len(replaced_ids)):
                 self.game.move_card(player.deck.cards[0], player_id, CardZone.HAND)
@@ -175,11 +186,28 @@ class GameRunner:
         self.game.mulligan_submitted.clear()
         self.game.setup_complete = True
 
-        # Start first turn
+        # Start first turn. Enqueued first so that "Game Start" effects, enqueued below, resolve before it.
         self.game.enqueue_actions(
             PlayerStartTurnAction(player=self.game.turn_player),
             source=self.game.turn_player,
         )
+
+        # Enqueue "At the start of the game: ..." effects.
+        # Since the resolution stack is LIFO, enqueue them in reverse order.
+        effect_sources = []
+
+        for player in (self.game.turn_player, self.game.turn_player.opponent):
+            for effect, source in self.game.collect_ability_listener_effects(
+                Ability.GAME_START,
+                player=player,
+            ):
+                effect_sources.append(source)
+
+        for source in reversed(effect_sources):
+            self.game.enqueue_actions(
+                TriggerAbility(target=source, ability=Ability.GAME_START),
+                source=source,
+            )
 
         return EngineUpdate(results=[], pending=(), game_over=self.game.game_over)
 
@@ -197,10 +225,12 @@ class GameRunner:
                 f"Effect: {pending.action!r}\n"
                 f"Source: {pending.source!r}\n"
                 f"kwargs: {pending.kwargs!r}\n"
-                f"env: {pending.env!r}"
+                f"env: {pending.env!r}\n"
+                f"vars: {repr(pending.ctx.vars) if pending.ctx is not None else '-'}"
             ) from e
 
-        self.game.check_invariants()  # TODO move?
+        if self.validate_invariants:
+            self.game.check_invariants()
 
         return results
 
@@ -225,8 +255,16 @@ class GameRunner:
 
         # Queue is not empty: resolve one pending action
         if self.game.resolution_stack:
+            start_log_index = len(self.game.action_log)
             results = self._resolve_one()
-            return EngineUpdate(results=results, pending=self._pending_sorted(), game_over=self.game.game_over)
+            new_log_records = self.game.action_log[start_log_index:]
+
+            return EngineUpdate(
+                results=results,
+                pending=self._pending_sorted(),
+                game_over=self.game.game_over,
+                log_records=new_log_records,
+            )
 
         # Open game state: request turn player's action
         assert len(self.game.stack) == 0, self.game.stack
@@ -243,6 +281,7 @@ class GameRunner:
         Returns a single batch containing all results that were emitted.
         """
         results = []
+        log_records = []
         steps = 0
 
         while not self.game.game_over and steps < step_limit:
@@ -251,9 +290,15 @@ class GameRunner:
 
             if upd.results:
                 results.extend(upd.results)
+                log_records.extend(upd.log_records)
 
             if upd.pending or upd.game_over:
-                return EngineUpdate(results=results, pending=upd.pending, game_over=upd.game_over)
+                return EngineUpdate(
+                    results=results,
+                    pending=upd.pending,
+                    game_over=upd.game_over,
+                    log_records=log_records,
+                )
 
         if steps >= step_limit:
             raise RuntimeError("Step limit reached (possible infinite loop).")

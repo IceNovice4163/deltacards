@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass, replace
-from typing import Generic, TypeVar
+from typing import Any, ClassVar, Generic, TYPE_CHECKING, TypeVar
 
 from deltacards.content.library import LIBRARY
 from deltacards.model.entity import Entity
@@ -8,6 +8,7 @@ from deltacards.model.enums import (
     CardKeyword,
     CardRarity,
     CardStatusId,
+    CardToggleableAbility,
     CardType,
     CardZone,
     PlayerId,
@@ -15,6 +16,10 @@ from deltacards.model.enums import (
 )
 from deltacards.model.snapshots import CardSnapshot, MonsterSnapshot, SpellSnapshot
 from deltacards.model.templates import CardTemplate, MonsterTemplate
+
+if TYPE_CHECKING:
+    from deltacards.dsl.core import TargetSelector
+
 
 TTemplate = TypeVar('TTemplate', bound=CardTemplate)
 
@@ -73,7 +78,7 @@ class CaughtCardData:
 
 
 class Card(Entity, Generic[TTemplate]):
-    targets = None
+    targets: ClassVar['TargetSelector | None'] = None
 
     def __init__(
         self,
@@ -93,10 +98,15 @@ class Card(Entity, Generic[TTemplate]):
         self._zone = zone
         self.creator_id = creator_id
         self.creator_base_identity = creator_base_identity
-        self._base = base
+        self.base = base or BaseStats(
+            cost=self.template.cost,
+            attack=getattr(self.template, 'attack', None),
+            hp=getattr(self.template, 'hp', None),
+        )
 
         self.keywords = self.template.keywords
         self.statuses = self.template.statuses.copy()
+        self.active_abilities = self.template.active_abilities.copy()
 
         self.buffs = CardBuffs()
         self.caught_card: CaughtCardData | None = None
@@ -147,12 +157,12 @@ class Card(Entity, Generic[TTemplate]):
         return self.template.rarity
 
     @property
-    def cost(self) -> int:
-        return self._get_cached_attr('cost')
+    def tribes(self) -> tuple[Tribe, ...]:
+        return self.template.tribes
 
     @property
-    def base(self) -> BaseStats | TTemplate:
-        return self._base or self.template
+    def cost(self) -> int:
+        return self._get_cached_attr('cost')
 
     @property
     def is_generated(self) -> bool:
@@ -166,9 +176,32 @@ class Card(Entity, Generic[TTemplate]):
     def zone(self, new_zone: CardZone):
         self._set_zone(new_zone)
 
-    @property
-    def controller(self) -> Entity:  # TODO add to other types of entities
-        return self.game.entity(self.controller_id)
+    def get_ability(self, ability: Ability):
+        if (
+            ability in (Ability.SHOCK, Ability.SUPPORT, Ability.BULLSEYE, Ability.PROGRAM)
+            and CardToggleableAbility(ability.value) not in self.active_abilities
+        ):
+            return None
+
+        return super().get_ability(ability)
+
+    def has_ability(self, ability: Ability) -> bool:
+        if (
+            ability in (Ability.SHOCK, Ability.SUPPORT, Ability.BULLSEYE, Ability.PROGRAM)
+            and CardToggleableAbility(ability.value) not in self.active_abilities
+        ):
+            return False
+
+        return super().has_ability(ability)
+
+    def get_need_condition(self) -> Any | None:
+        return None
+
+    def has_need_condition(self) -> bool:
+        return False
+
+    def has_tribe(self, tribe: Tribe) -> bool:
+        return (tribe in self.template.tribes) or (Tribe.ALL in self.template.tribes)
 
     def add_keyword(self, keyword: CardKeyword) -> None:
         self.keywords |= keyword
@@ -195,9 +228,14 @@ class Card(Entity, Generic[TTemplate]):
         self.statuses.pop(status_id, None)
         self._invalidate_rules()
 
+    def toggle_ability(self, ability: CardToggleableAbility, enabled: bool) -> None:
+        if enabled:
+            self.active_abilities.add(ability)
+        else:
+            self.active_abilities.discard(ability)
+
     def set_base_stats(self, cost: int | None = None) -> None:
-        source = self._base or self.template
-        self._base = BaseStats(cost=source.cost if cost is None else cost)
+        self.base = BaseStats(cost=self.base.cost if cost is None else cost)
 
         self._invalidate_rules()
 
@@ -211,9 +249,10 @@ class Card(Entity, Generic[TTemplate]):
         if self.template.id != other.template.id:
             raise ValueError(f"Template ID mismatch: {self.template.id} != {other.template.id}")
 
-        self._base = replace(other._base) if other._base is not None else None
+        self.base = replace(other.base)
         self.keywords = other.keywords
         self.statuses = other.statuses.copy()
+        self.active_abilities = other.active_abilities.copy()
         self.buffs = replace(other.buffs)
         self.caught_card = replace(other.caught_card) if other.caught_card is not None else None
 
@@ -222,8 +261,10 @@ class Card(Entity, Generic[TTemplate]):
             type=self.type,
             template=self.template,
             controller_id=self.controller_id,
+            base=replace(self.base),
             keywords=self.keywords,
             statuses=self.statuses.copy(),
+            active_abilities=self.active_abilities.copy(),
             buffs=replace(self.buffs),
             caught_card=replace(self.caught_card) if self.caught_card is not None else None,
         )
@@ -248,12 +289,13 @@ class Card(Entity, Generic[TTemplate]):
             'template_id': self.template.id,
             'owner_id': self.owner_id,
             'controller_id': self.controller_id,
-            'zone': self._zone,
+            'zone': self._zone.value,
             'creator_id': self.creator_id,
-            'base': asdict(self._base) if self._base is not None else None,
+            'base': asdict(self.base),
             'cost': self.cost,
-            'keywords': self.keywords,
+            'keywords': self.keywords.value,
             'statuses': {status_id.value: value for status_id, value in self.statuses.items()},
+            'active_abilities': tuple(self.active_abilities),
         }
 
 
@@ -275,7 +317,17 @@ class Monster(Card[MonsterTemplate]):
         self.has_attacked = False
         self.hp_missing = 0
 
+        # True while this monster is still on board but has already lethal damage or death processed
+        # and a `Kill()` or a death-replacement effect is pending
         self.marked_for_destruction = False
+
+        # True if monster has been removed from board, but reset/move to DUSTPILE is delayed
+        # because of queued ability resolutions
+        self.death_pending = False
+
+        # Count of queued ability resolutions that are needed to be resolved before this monster's state resets
+        # (due to leaving the board)
+        self.death_finalization_locks = 0
 
     def __str__(self):
         atk_style = 'atk-paralyzed' if self.get_status(CardStatusId.PARALYZED) else 'atk'
@@ -296,15 +348,33 @@ class Monster(Card[MonsterTemplate]):
         self._zone = new_zone
 
     def _reset(self) -> None:
-        self.silence()
-        self.age = 0
-        self.pos = None
+        """
+        Reset this monster's runtime state to its base template state.
+
+        `Game.move_card()` is responsible for setting `zone` and `pos`.
+        Generated metadata is intentionally preserved.
+        """
+        self.base = BaseStats(
+            cost=self.template.cost,
+            attack=self.template.attack,
+            hp=self.template.hp,
+        )
+
+        self.buffs = CardBuffs()
         self.keywords = self.template.keywords
         self.statuses = self.template.statuses.copy()
+        self.active_abilities = self.template.active_abilities.copy()
+        self.caught_card = None
 
+        self.age = 0
         self.has_attacked = False
         self.hp_missing = 0
+
         self.marked_for_destruction = False
+        self.death_pending = False
+
+        self._attrs_cache.clear()
+        self._invalidate_rules()
 
     def to_str(self) -> str:
         atk_style = 'atk-paralyzed' if self.get_status(CardStatusId.PARALYZED) else 'atk'
@@ -326,10 +396,6 @@ class Monster(Card[MonsterTemplate]):
         return CardType.MONSTER
 
     @property
-    def tribes(self) -> tuple[Tribe, ...]:
-        return self.template.tribes
-
-    @property
     def attack(self) -> int:
         return self._get_cached_attr('attack')
 
@@ -345,39 +411,28 @@ class Monster(Card[MonsterTemplate]):
     def silenced(self) -> bool:
         return self.has_keyword(CardKeyword.SILENCED)
 
-    @property
-    def can_attack(self) -> int:  # TODO deprecated?
-        if self.has_attacked:
-            return 0
-
-        if self.keywords & CardKeyword.DISARMED:
-            return 0
-
-        if self.get_status(CardStatusId.PARALYZED) > 0:
-            return 0
-
-        if (self.keywords & CardKeyword.CHARGE) or self.age > 0:
-            return 2
-
-        if self.keywords & CardKeyword.HASTE:
-            return 1
-
-        return 0
-
     def get_ability(self, ability: Ability):
         if self.silenced:
             return None
 
         return super().get_ability(ability)
 
-    def has_ability(self, ability: Ability):
+    def has_ability(self, ability: Ability) -> bool:
         if self.silenced:
-            return None
+            return False
 
         return super().has_ability(ability)
 
-    def has_tribe(self, tribe: Tribe) -> bool:
-        return (tribe in self.template.tribes) or (Tribe.ALL in self.template.tribes)
+    def get_need_condition(self) -> Any | None:
+        condition = self._need_condition
+
+        if hasattr(condition, '__get__'):
+            return condition.__get__(self, type(self))
+
+        return condition
+
+    def has_need_condition(self) -> bool:
+        return self._need_condition is not None
 
     def heal(self, amount: int) -> int:
         old_hp = self.hp
@@ -386,10 +441,27 @@ class Monster(Card[MonsterTemplate]):
         self._invalidate_rules()
         return self.hp - old_hp
 
-    def buff(self, cost: int = 0, attack: int = 0, hp: int = 0) -> None:
+    def buff(
+        self,
+        cost: int = 0,
+        attack: int = 0,
+        hp: int = 0,
+        min_cost: int | None = 0,
+        min_attack: int | None = 0,
+        min_hp: int | None = 0,
+    ) -> None:
         self.buffs.cost += cost
         self.buffs.attack += attack
         self.buffs.max_hp += hp
+
+        if (min_cost is not None) and (self.base.cost + self.buffs.cost < min_cost):
+            self.buffs.cost = min_cost - self.base.cost
+
+        if (min_attack is not None) and (self.base.attack + self.buffs.attack < min_attack):
+            self.buffs.attack = min_attack - self.base.attack
+
+        if (min_hp is not None) and (self.base.hp + self.buffs.max_hp < min_hp):
+            self.buffs.max_hp = min_hp - self.base.hp
 
         self._invalidate_rules()
 
@@ -406,8 +478,9 @@ class Monster(Card[MonsterTemplate]):
             for status_id, value in self.statuses.items()
             if status_id in (CardStatusId.LOOP,)
         }
+        self.active_abilities = set()
 
-        # TODO check if needed
+        # Invalidate before reading `max_hp` as it may have changed
         self._invalidate_rules()
 
         new_hp = min(old_hp, self.max_hp)
@@ -418,13 +491,34 @@ class Monster(Card[MonsterTemplate]):
         self._invalidate_rules()
         return True
 
-    def set_base_stats(self, cost: int | None = None, attack: int | None = None, hp: int | None = None) -> None:
-        source = self._base or self.template
+    def remove_negative_effects(self) -> None:
+        if self.buffs.cost > 0:
+            self.buffs.cost = 0
+        if self.buffs.attack < 0:
+            self.buffs.attack = 0
+        if self.buffs.max_hp < 0:
+            self.buffs.max_hp = 0
 
-        self._base = BaseStats(
-            cost=source.cost if cost is None else cost,
-            attack=source.attack if attack is None else attack,
-            hp=source.hp if hp is None else hp,
+        for keyword in (
+            CardKeyword.KR,
+            CardKeyword.DISARMED,
+            CardKeyword.SILENCED,
+            CardKeyword.WANTED,
+        ):
+            self.keywords &= ~keyword
+
+        for status_id in (
+            CardStatusId.PARALYZED,
+        ):
+            self.statuses.pop(status_id, None)
+
+        self._invalidate_rules()
+
+    def set_base_stats(self, cost: int | None = None, attack: int | None = None, hp: int | None = None) -> None:
+        self.base = BaseStats(
+            cost=self.base.cost if cost is None else max(cost, 0),
+            attack=self.base.attack if attack is None else max(attack, 0),
+            hp=self.base.hp if hp is None else max(hp, 0),
         )
 
         self._invalidate_rules()

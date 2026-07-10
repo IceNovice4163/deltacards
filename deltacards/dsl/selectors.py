@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from typing import Any, Literal, TYPE_CHECKING
 
 from deltacards.content.library import LIBRARY
-from deltacards.dsl.core import TargetSelector, TargetingError, resolve_selector_value
+from deltacards.dsl.core import TargetSelector, TargetingError, ValueExpr, resolve_selector_value, to_value
+from deltacards.model.artifacts import ARTIFACTS
 from deltacards.model.cards import Card, CardZone, Monster
 from deltacards.model.snapshots import MonsterSnapshot
 
@@ -66,6 +67,51 @@ class TurnPlayerSelector(TargetSelector):
 
     def __repr__(self) -> str:
         return "TURN_PLAYER"
+
+
+# --------------------------
+# Type conversion selectors
+# --------------------------
+
+@dataclass(frozen=True, slots=True, eq=False)
+class ResolveEntitySelector(TargetSelector):
+    entity_id: ValueExpr
+
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        entity_id = self.entity_id.eval(ctx=ctx, **kwargs)
+        return [ctx.game.entity(entity_id)]
+
+    def __repr__(self) -> str:
+        return f"RESOLVE_ENTITY({self.entity_id!r})"
+
+
+def RESOLVE_ENTITY(entity_id: Any) -> ResolveEntitySelector:
+    return ResolveEntitySelector(to_value(entity_id))
+
+
+# --------------------
+# Range generators
+# --------------------
+
+@dataclass(frozen=True, slots=True, eq=False)
+class RangeSelector(TargetSelector):
+    start: ValueExpr
+    stop: ValueExpr
+    step: ValueExpr
+
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        start = self.start.eval(ctx=ctx, **kwargs)
+        stop = self.stop.eval(ctx=ctx, **kwargs)
+        step = self.step.eval(ctx=ctx, **kwargs)
+
+        return list(range(start, stop, step))
+
+    def __repr__(self) -> str:
+        return f"RANGE({self.start!r}, {self.stop!r}, {self.step!r})"
+
+
+def RANGE(start: Any, stop: Any, step: Any = 1) -> RangeSelector:
+    return RangeSelector(to_value(start), to_value(stop), to_value(step))
 
 
 # ------------------------
@@ -170,7 +216,7 @@ class RelativeBoardSelector(TargetSelector):
         if not isinstance(monster, (Monster, MonsterSnapshot)):
             raise TargetingError(f"RelativeBoardSelector expects Monster/MonsterSnapshot, got {type(monster).__name__}: {monster!r}")
 
-        if monster.zone is not CardZone.BOARD:
+        if isinstance(monster, Monster) and monster.zone is not CardZone.BOARD:
             return []
 
         player = ctx.game.player(monster.controller_id)
@@ -336,10 +382,53 @@ def CARD_BY_NAME(name: str) -> CardByNameSelector:
     return CardByNameSelector(name=name)
 
 
+# --------------------
+# Artifact selectors
+# --------------------
+
+@dataclass(frozen=True, slots=True, eq=False)
+class ArtifactByNameSelector(TargetSelector):
+    name: str
+
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        return [artifact for artifact in ARTIFACTS.values() if artifact.name == self.name]
+
+    def __repr__(self) -> str:
+        return f"ARTIFACT_BY_NAME({self.name!r})"
+
+
+def ARTIFACT_BY_NAME(name: str) -> ArtifactByNameSelector:
+    return ArtifactByNameSelector(name=name)
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class PlayerArtifactSelector(TargetSelector):
+    player: TargetSelector
+    name: str
+
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        player = self.player.eval_optional_one(ctx=ctx, **kwargs)
+        if player is None:
+            return []
+
+        return [artifact for artifact in player.artifacts if artifact.name == self.name]
+
+    def __repr__(self) -> str:
+        return f"ARTIFACT_OF_PLAYER({self.player!r}, name={self.name})"
+
+
+def ARTIFACT_OF_PLAYER(player: TargetSelector, name: str) -> PlayerArtifactSelector:
+    return PlayerArtifactSelector(player=player, name=name)
+
+
+# ---------------------
+# Selectors for macros
+# ---------------------
+
 @dataclass(frozen=True, slots=True, eq=False)
 class NextLostSoulSelector(TargetSelector):
     def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
-        lost_soul_card_names = ("LostAlphys", "LostPapyrus", "LostUndyne", "LostToriel", "LostAsgore", "LostSans")
+        lost_soul_card_names = ("Lost Alphys", "Lost Papyrus", "Lost Undyne", "Lost Toriel", "Lost Asgore", "Lost Sans")
         player_id = ctx.source.controller_id
         player = ctx.game.player(player_id)
 
@@ -362,11 +451,14 @@ SELF = SelfSelector()
 TARGET = EnvSelector('target')
 KILLER = EnvSelector('killer')
 ATTACKER = EnvSelector('attacker')
+LOOP_COPY = EnvSelector('loop_copy')
+TRIGGER_CARD = EnvSelector('trigger_card')
 
 YOU = YouSelector()
 CONTROLLER = YOU
 OPPONENT = OpponentSelector()
 TURN_PLAYER = TurnPlayerSelector()
+ALL_PLAYERS = YOU | OPPONENT
 
 BOARD = ZoneSelector(CardZone.BOARD, YOU)
 HAND = ZoneSelector(CardZone.HAND, YOU)
@@ -382,6 +474,7 @@ OPPONENT_ERASED = ZoneSelector(CardZone.ERASED, OPPONENT)
 
 ALLY_MONSTERS = BOARD
 ENEMY_MONSTERS = OPPONENT_BOARD
+ALL_MONSTERS = ALLY_MONSTERS | ENEMY_MONSTERS
 
 ALLIES = YOU | ALLY_MONSTERS
 ENEMIES = OPPONENT | ENEMY_MONSTERS

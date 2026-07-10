@@ -1,6 +1,6 @@
 from deltacards.dsl.core import Predicate, TargetSelector
 from deltacards.dsl.selectors import CARD_LIBRARY, SELF, YOU
-from deltacards.dsl.transforms import GENERATE, RANDOM
+from deltacards.dsl.transforms import GENERATE_CARD, RANDOM
 
 
 def DISCOVER(
@@ -17,4 +17,4 @@ def DISCOVER(
     for predicate in constraints:
         selector = selector & predicate
 
-    return selector >> RANDOM(n) >> GENERATE(controller=controller, creator=creator)
+    return selector >> RANDOM(n) >> GENERATE_CARD(controller=controller, creator=creator)

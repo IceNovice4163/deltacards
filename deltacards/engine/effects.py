@@ -28,11 +28,12 @@ class StepResult:
 @dataclass(frozen=True)
 class EffectResult:
     success: bool
+    results: tuple['ActionResult', ...] = ()
 
 
 @dataclass(frozen=True)
 class EffectStep:
-    actions: list[Action]
+    items: list[Any]
     kwargs: dict[str, Any]
 
 
@@ -61,12 +62,19 @@ def effectify(x: Any) -> EffectBase:
         return x
     if isinstance(x, Action):
         return Atomic(x)
-    if isinstance(x, (list, tuple)):
-        return Many([effectify(i) for i in x])
     if callable(x):
         return x
 
     raise TypeError(f"Failed to convert {x!r} to an effect")
+
+
+@dataclass(frozen=True)
+class NoEffect(EffectBase):
+    def __call__(
+        self, *, ctx: ActionContext, **kwargs
+    ) -> Generator[EffectStep, StepResult, EffectResult]:
+        yield from ()  # make this function a generator
+        return EffectResult(success=True)
 
 
 @dataclass(frozen=True)
@@ -77,7 +85,10 @@ class Atomic(EffectBase):
         self, *, ctx: ActionContext, **kwargs
     ) -> Generator[EffectStep, StepResult, EffectResult]:
         step_res: StepResult = yield EffectStep([self.action], kwargs=kwargs)
-        return EffectResult(success=step_res.success)
+        return EffectResult(
+            success=step_res.success,
+            results=step_res.results,
+        )
 
 
 @dataclass(frozen=True)
@@ -95,22 +106,6 @@ class StoreResult(EffectBase):
 
 
 @dataclass(frozen=True)
-class Many(EffectBase):
-    effects: list[EffectBase | Action]
-
-    def __call__(
-        self, *, ctx: ActionContext, **kwargs
-    ) -> Generator[EffectStep, StepResult, EffectResult]:
-        ok = True
-        for effect in self.effects:
-            res = yield from effect(ctx=ctx, **kwargs)
-            if not res.success:
-                ok = False
-
-        return EffectResult(success=ok)
-
-
-@dataclass(frozen=True)
 class Seq(EffectBase):
     """A >> B: always run B after A (regardless of A.success)."""
     left: EffectBase | Action
@@ -122,7 +117,10 @@ class Seq(EffectBase):
         left = yield from self.left(ctx=ctx, **kwargs)
         right = yield from self.right(ctx=ctx, **kwargs)
 
-        return EffectResult(success=left.success and right.success)
+        return EffectResult(
+            success=left.success and right.success,
+            results=left.results + right.results,
+        )
 
 
 @dataclass(frozen=True)
@@ -140,12 +138,18 @@ class Then(EffectBase):
         if not cond.success:
             if self.else_ is not None:
                 else_ = yield from self.else_(ctx=ctx, **kwargs)
-                return EffectResult(success=else_.success)
+                return EffectResult(
+                    success=else_.success,
+                    results=else_.results,
+                )
 
             return EffectResult(success=False)
 
         then = yield from self.then(ctx=ctx, **kwargs)
-        return EffectResult(success=then.success)
+        return EffectResult(
+            success=then.success,
+            results=then.results,
+        )
 
 
 SuccessMode = Literal['all', 'any', 'last']
@@ -192,6 +196,8 @@ class For(EffectBase):
             raise ValueError(f"For(count) must be >= 0, got {count}")
 
         successes: list[bool] = []
+        results: list[ActionResult] = []
+
         for i in range(count):
             if self.index_var is not None:
                 with bind_ctx_var(ctx, self.index_var.name, i):
@@ -200,8 +206,12 @@ class For(EffectBase):
                 res = yield from self.effect(ctx=ctx, **kwargs)
 
             successes.append(bool(res.success))
+            results.extend(res.results)
 
-        return EffectResult(success=_combine_success(successes, self.success_mode))
+        return EffectResult(
+            success=_combine_success(successes, self.success_mode),
+            results=tuple(results),
+        )
 
 
 @dataclass(frozen=True)
@@ -222,6 +232,8 @@ class ForEach(EffectBase):
         item_exprs = list(raw_items)
 
         successes: list[bool] = []
+        results: list[ActionResult] = []
+
         for index, item in enumerate(item_exprs):
             if self.index_var is not None:
                 with bind_ctx_var(ctx, self.index_var.name, index), bind_ctx_var(ctx, self.var.name, item):
@@ -231,5 +243,36 @@ class ForEach(EffectBase):
                     res = yield from self.effect(ctx=ctx, **kwargs)
 
             successes.append(bool(res.success))
+            results.extend(res.results)
 
-        return EffectResult(success=_combine_success(successes, self.success_mode))
+        return EffectResult(
+            success=_combine_success(successes, self.success_mode),
+            results=tuple(results),
+        )
+
+
+@dataclass(frozen=True)
+class While(EffectBase):
+    cond: Any
+    effect: EffectBase | Action
+    success_mode: SuccessMode = 'all'
+
+    def __post_init__(self):
+        object.__setattr__(self, 'effect', effectify(self.effect))
+
+    def __call__(
+        self, *, ctx: ActionContext, **kwargs
+    ) -> Generator[EffectStep, StepResult, EffectResult]:
+        successes: list[bool] = []
+        results: list[ActionResult] = []
+
+        while bool(evaluate_expr(self.cond, ctx=ctx, **kwargs)):
+            res = yield from self.effect(ctx=ctx, **kwargs)
+
+            successes.append(bool(res.success))
+            results.extend(res.results)
+
+        return EffectResult(
+            success=_combine_success(successes, self.success_mode),
+            results=tuple(results),
+        )

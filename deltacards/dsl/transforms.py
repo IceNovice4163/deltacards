@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 from typing import Any, Literal, TYPE_CHECKING
 
-from deltacards.dsl.core import TargetSelector, TargetingError, Transform, ValueExpr
-from deltacards.dsl.selectors import YOU
+from deltacards.content.library import LIBRARY
+from deltacards.dsl.core import TargetSelector, TargetingError, Transform, ValueExpr, to_value
+from deltacards.dsl.inspection import _MISSING, card_id_of, template_id_of
+from deltacards.dsl.selectors import CARD_BY_NAME, SELF, YOU
 from deltacards.dsl.values import TEMPLATE_ID
 from deltacards.model.cards import Card, CardZone, Monster
 from deltacards.model.entity import Entity
@@ -125,7 +127,7 @@ class GenerateCardsTransform(Transform):
             return []
 
         if not isinstance(controller, Player):
-            raise TargetingError(f"GENERATE() controller must be a player, got {type(controller).__name__}")
+            raise TargetingError(f"GENERATE_CARD() controller must be a player, got {type(controller).__name__}")
 
         creator_id = None
         creator_base_identity = None
@@ -154,7 +156,7 @@ class GenerateCardsTransform(Transform):
         return result
 
     def __repr__(self) -> str:
-        return f"GENERATE(controller={self.controller!r}, creator={self.creator!r})"
+        return f"GenerateCardsTransform(controller={self.controller!r}, creator={self.creator!r})"
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -246,14 +248,24 @@ def SORT_BY(key: ValueExpr, reverse: bool = False) -> SortByTransform:
     return SortByTransform(key=key, reverse=reverse)
 
 
-def GENERATE(
+def GENERATE_CARD(
+    spec = None,
+    *,
     controller: TargetSelector | None = None,
     creator: TargetSelector | None = None,
-) -> GenerateCardsTransform:
-    return GenerateCardsTransform(
+):
+    transform = GenerateCardsTransform(
         controller=YOU if controller is None else controller,
-        creator=creator,
+        creator=SELF if creator is None else creator,
     )
+
+    if spec is None:
+        return transform
+
+    if isinstance(spec, str):
+        return CARD_BY_NAME(spec) >> transform
+
+    return spec >> transform
 
 
 def COPY(
@@ -263,7 +275,7 @@ def COPY(
     return CopyTransform(
         exact=False,
         controller=YOU if controller is None else controller,
-        creator=creator,
+        creator=SELF if creator is None else creator,
     )
 
 
@@ -274,5 +286,89 @@ def EXACT_COPY(
     return CopyTransform(
         exact=True,
         controller=YOU if controller is None else controller,
-        creator=creator,
+        creator=SELF if creator is None else creator,
     )
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class AsTemplatesTransform(Transform):
+    distinct: bool = False
+
+    def apply(self, entities: list[Any], *, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        result = []
+        seen_template_ids = set()
+
+        for entity in entities:
+            template_id = template_id_of(entity, default=_MISSING)
+            if template_id is _MISSING:
+                raise TargetingError(f"AS_TEMPLATES expects card-like objects, got {entity!r}")
+
+            if self.distinct:
+                if template_id in seen_template_ids:
+                    continue
+
+                seen_template_ids.add(template_id)
+
+            result.append(LIBRARY.get(template_id))
+
+        return result
+
+    def __repr__(self) -> str:
+        return f"AS_TEMPLATES(distinct={self.distinct})"
+
+
+def AS_TEMPLATES(distinct: bool = False) -> AsTemplatesTransform:
+    return AsTemplatesTransform(distinct=distinct)
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class AsCardsTransform(Transform):
+    def apply(self, entities: list[Any], *, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        result = []
+
+        for entity in entities:
+            card_id = card_id_of(entity, default=_MISSING)
+            if card_id is _MISSING:
+                raise TargetingError(f"AS_CARDS expects card-like objects, got {entity!r}")
+
+            result.append(ctx.game.entity(card_id))
+
+        return result
+
+    def __repr__(self) -> str:
+        return "AS_CARDS()"
+
+
+AS_CARDS = AsCardsTransform
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class LimitPerTransform(Transform):
+    key: ValueExpr
+    n: int
+
+    def apply(self, entities: list[Any], *, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        if self.n <= 0:
+            return []
+
+        result = []
+        counts = {}
+
+        for entity in entities:
+            key = self.key.eval(ctx=ctx, entity=entity, **kwargs)
+
+            count = counts.get(key, 0)
+            if count >= self.n:
+                continue
+
+            counts[key] = count + 1
+            result.append(entity)
+
+        return result
+
+    def __repr__(self) -> str:
+        return f"LIMIT_PER({self.key!r}, {self.n})"
+
+
+def LIMIT_PER(key: Any, n: int) -> LimitPerTransform:
+    return LimitPerTransform(key=to_value(key), n=n)

@@ -46,6 +46,13 @@ class CardStatusId(Enum):
     LOOP = 'loop'
 
 
+class CardToggleableAbility(Enum):
+    SHOCK = 'shock'
+    SUPPORT = 'support'
+    BULLSEYE = 'bullseye'
+    PROGRAM = 'program'
+
+
 class CardRarity(IntEnum):
     BASE = 0
     COMMON = 1
@@ -54,6 +61,7 @@ class CardRarity(IntEnum):
     LEGENDARY = 4
     DETERMINATION = 5
     TOKEN = 100
+    STORY = 200
 
 
 class Ability(Enum):
@@ -61,12 +69,14 @@ class Ability(Enum):
     SYNERGY = 'synergy'
     DUST = 'dust'
     DELAY = 'delay'
+    GAME_START = 'game_start'
     TURN_START = 'turn_start'
     TURN_END = 'turn_end'
     SHOCK = 'shock'
     SUPPORT = 'support'
     TURBO = 'turbo'
     BULLSEYE = 'bullseye'
+    PROGRAM = 'program'
 
 
 class DamageKind(Enum):
@@ -74,7 +84,12 @@ class DamageKind(Enum):
     SPELL = 'spell'
     ABILITY = 'ability'
     FATIGUE = 'fatigue'
-    OTHER = 'other'
+
+
+class Expansion(Enum):
+    BASE = 'base'
+    DELTARUNE = 'deltarune'
+    UTY = 'uty'
 
 
 class Tribe(Enum):

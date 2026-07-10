@@ -1,9 +1,10 @@
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import ClassVar, TYPE_CHECKING
 
 from deltacards.actions.standard import *
 from deltacards.model.entity import Entity
 from deltacards.model.enums import PlayerId
+from deltacards.model.snapshots import ArtifactSnapshot
 
 if TYPE_CHECKING:
     from deltacards.model.player import Player
@@ -32,9 +33,9 @@ class ArtifactRarity(Enum):
 class Artifact(Entity):
     __slots__ = 'owner_id', 'controller_id', 'counter', 'active'
 
-    name: str
-    rarity: ArtifactRarity
-    initial_counter: int = 0
+    name: ClassVar[str]
+    rarity: ClassVar[ArtifactRarity]
+    initial_counter: ClassVar[int] = 0
 
     def __init__(self, id: int, controller_id: PlayerId):
         super().__init__(id)
@@ -57,3 +58,15 @@ class Artifact(Entity):
             'artifact',
             [artifact_id for artifact_id, artifact_cls in ARTIFACTS.items() if self.__class__ is artifact_cls][0],
         )
+
+    def to_snapshot(self) -> ArtifactSnapshot:
+        return ArtifactSnapshot(
+            id=self.id,
+            name=self.name,
+            controller_id=self.controller_id,
+            counter=self.counter,
+            active=self.active,
+        )
+
+    def toggle(self, enabled: bool):
+        self.active = enabled
