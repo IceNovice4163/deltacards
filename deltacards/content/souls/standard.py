@@ -1,4 +1,3 @@
-from deltacards.content.artifacts.token import Save
 from deltacards.dsl.api import *
 from deltacards.model.souls import Soul, soul
 
@@ -11,16 +10,13 @@ class EmptySoul(Soul):
 
 @soul('kindness')
 class Kindness(Soul):
-    def turn_end(self, ctx: 'ActionContext'):
-        if ctx.game.turn < 3:
-            return
-
-        if (ALLY_MONSTERS & DAMAGED).eval(ctx.game, self):
-            yield Heal(target=ALLY_MONSTERS, amount=1)
-        else:
-            yield Buff(target=RIGHTMOST(ALLY_MONSTERS), hp=1)
-
-        yield Heal(target=CONTROLLER, amount=1)
+    turn_end = Check(YOU.turn >= 3).to(
+        YOU.heal(1)
+        >> Check(ALLY_MONSTERS & DAMAGED).to(
+            (ALLY_MONSTERS & DAMAGED).heal(1),
+            else_=(ALLY_MONSTERS >> RIGHTMOST).buff(hp=+1)
+        )
+    )
 
 
 @soul('determination')
@@ -33,54 +29,54 @@ class Determination(Soul):
     def game_start(self, ctx: 'ActionContext'):
         controller = self._get_controller(ctx)
         controller.next_lost_soul = 0
-        return AddArtifact(target=CONTROLLER, artifact=Save(controller_id=self.controller_id))
+        return YOU.add_artifact(ARTIFACT_BY_NAME("Save"))
 
     def on_would_die(self, entity: Entity, **kwargs):
         if entity.id == self.controller_id and self.extra_life:
             self.extra_life = False
-            return SetPlayerHP(player=entity, hp=5)
+            return entity.actions.set_hp(5)
 
         return None
 
 
 @soul('patience')
 class Patience(Soul):
-    def turn_end(self, ctx: 'ActionContext'):
-        controller = self._get_controller(ctx)
-        if ctx.game.turn % 2 == 0 and len(controller.hand) < 7 and not ((HAND | DECK) & (TEMPLATE_ID == 552)).eval(ctx=ctx):
-            return Move(target=CARD_BY_NAME("ChangeOfWinds") >> GENERATE(), zone=CardZone.DECK, pos='top')
-
-        return None
+    turn_end = Check(
+        (YOU.turn % 2 == 0)
+        & (COUNT(HAND) < MAX_HAND_SIZE)
+        & (COUNT((HAND | DECK) & (TEMPLATE_NAME == "Change of Winds")) == 0)
+    ).to(
+        GENERATE_CARD("Change of Winds").to_deck(pos='top')
+    )
 
 
 @soul('bravery')
 class Bravery(Soul):
-    def turn_start(self, ctx: 'ActionContext'):
-        if ctx.game.turn % 3 == 0:
-            controller = self._get_controller(ctx)
-            if len(controller.hand) < 7:
-                return Move(target=CARD_BY_NAME("Recruitment") >> GENERATE(), zone=CardZone.HAND)
-            else:
-                return Move(target=CARD_BY_NAME("Draft") >> GENERATE(), zone=CardZone.DECK)
-
-        return None
+    turn_start = Check(YOU.turn % 3 == 0).to(
+        Check(COUNT(HAND) < MAX_HAND_SIZE).to(
+            GENERATE_CARD("Recruitment").to_hand(),
+            else_=GENERATE_CARD("Draft").to_deck()
+        )
+    )
 
 
 @soul('integrity')
 class Integrity(Soul):
-    def turn_end(self, ctx: 'ActionContext'):
-        controller = self._get_controller(ctx)
-        if ctx.game.turn > 1 and controller.get_gold_spent(ctx.game.turn) > controller.get_gold_spent(ctx.game.turn - 1):
-            return EarnGold(target=CONTROLLER, amount=1)
-
-        return None
+    turn_start = Check(YOU.turn > 10).to(
+        YOU.earn_gold(1)
+    )
+    turn_end = Check(YOU.turn > 1).to(
+        Check(SPENT_GOLD_THIS_TURN > SPENT_GOLD_LAST_TURN).to(
+            YOU.earn_gold(1)
+        )
+    )
 
 
 @soul('perseverance')
 class Perseverance(Soul):
-    turn_start = AddKeyword(target=(ENEMY_MONSTERS & ~HAS_KEYWORD(KR)) >> MAX(ATTACK), keyword=CardKeyword.KR)
+    turn_start = ((ENEMY_MONSTERS & ~HAS_KEYWORD(KR)) >> MAX(ATTACK)).add_keyword(KR)
 
 
 @soul('justice')
 class Justice(Soul):
-    turn_start = Hit(target=ENEMY_MONSTERS >> MIN(HP), damage=1)
+    turn_start = (ENEMY_MONSTERS >> MIN(HP)).hit(1)

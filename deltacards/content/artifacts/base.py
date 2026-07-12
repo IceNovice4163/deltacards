@@ -1,10 +1,5 @@
-from typing import TYPE_CHECKING
-
 from deltacards.dsl.api import *
 from deltacards.model.artifacts import Artifact, ArtifactRarity, artifact
-
-if TYPE_CHECKING:
-    from deltacards.engine.game import Game
 
 
 @artifact(1)
@@ -12,7 +7,7 @@ class Health(Artifact):
     name = "Health"
     rarity = ArtifactRarity.BASE
 
-    game_start = Buff(target=CONTROLLER, hp=5)
+    game_start = YOU.buff(hp=+7)
 
 
 @artifact(2)
@@ -20,22 +15,23 @@ class Draw(Artifact):
     name = "Draw"
     rarity = ArtifactRarity.BASE
 
-    game_start = DrawNext(player=CONTROLLER)
+    game_start = YOU.draw_next()
 
-    def turn_start(self, ctx: 'ActionContext'):
-        controller = self._get_controller(ctx)
-        if ctx.game.turn % 6 == 0 and len(controller.hand) < 7:
-            return DrawNext(player=CONTROLLER)
-
-        return None
+    turn_start = Check(
+        (YOU.turn % 5 == 0) & (COUNT(HAND) < MAX_HAND_SIZE)
+    ).to(
+        YOU.draw_next()
+    )
 
 
 @artifact(3)
-class Poke(Artifact):
-    name = "Poke"
+class Swarm(Artifact):
+    name = "Swarm"
     rarity = ArtifactRarity.BASE
 
-    game_start = Buff(target=OPPONENT, hp=-5)
+    turn_start = Check(YOU.turn == 3).to(
+        GENERATE_CARD("Spider").to_hand() * 2
+    )
 
 
 @artifact(4)
@@ -43,11 +39,36 @@ class Power(Artifact):
     name = "Power"
     rarity = ArtifactRarity.BASE
 
-    def turn_start(self, ctx: 'ActionContext'):
-        if ctx.game.turn % 3 == 0:
-            return Buff(target=RANDOM(HAND & IS_MONSTER), attack=1, hp=1)
+    turn_start = Check(
+        (YOU.turn >= 4) & (((YOU.turn - 4) % 3) == 0)
+    ).to(
+        SELF.update_artifact_counter(+1)
+    )
 
-        return None
+    @on_event(MonsterSummonedResult)
+    def on_monster_summoned(self, res: MonsterSummonedResult, game, **kwargs):
+        if not res.is_played:
+            return None
+
+        if res.monster.controller_id != self.controller_id:
+            return None
+
+        if self.counter <= 0:
+            return None
+
+        return SELF.update_artifact_counter(-1) >> game.entity(res.monster.id).actions.buff(attack=+1, hp=+1)
+
+
+@artifact(5)
+class Ribbit(Artifact):
+    name = "Ribbit"
+    rarity = ArtifactRarity.BASE
+
+    game_start = (
+        GENERATE_CARD("Tiny Froggit").to_hand()
+        >> GENERATE_CARD("Froggit").to_deck()
+        >> GENERATE_CARD("Final Froggit").to_deck()
+    )
 
 
 @artifact(6)
@@ -56,8 +77,11 @@ class Solidity(Artifact):
     rarity = ArtifactRarity.BASE
 
     @on_event(MonsterKilledResult)
-    def on_monster_killed(self, res: MonsterKilledResult, game: Game, **kwargs):
-        if res.monster.controller_id == self.controller_id and res.monster.has_keyword(CardKeyword.TAUNT):
-            return Move(target=CARD_BY_NAME("Shield") >> GENERATE(), zone=CardZone.DECK, pos='top')
+    def on_monster_killed(self, res: MonsterKilledResult, game, **kwargs):
+        if res.monster.controller_id != self.controller_id:
+            return None
 
-        return None
+        if not res.monster.has_keyword(CardKeyword.TAUNT):
+            return None
+
+        return GENERATE_CARD("Shield").to_deck(pos='top')
