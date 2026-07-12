@@ -11,6 +11,7 @@ from deltacards.actions.base import (
 from deltacards.actions.results import *
 from deltacards.dsl.selectors import ENEMY_MONSTERS
 from deltacards.dsl.transforms import RANDOM
+from deltacards.engine.modifiers import HealQuery
 from deltacards.model.cards import (
     Card,
     CardZone,
@@ -171,7 +172,15 @@ class Heal(Action):
         if isinstance(target, Monster) and target.zone is not CardZone.BOARD:
             return ActionOutcome(success=False)
 
-        hp_recovered = target.heal(amount)
+        q = HealQuery(
+            game=ctx.game,
+            source=ctx.source,
+            target=target,
+            amount=amount,
+        )
+        final_amount = ctx.game.rules.damage(q)
+
+        hp_recovered = target.heal(final_amount)
 
         return ActionOutcome(
             success=True,

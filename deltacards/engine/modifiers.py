@@ -11,9 +11,9 @@ if TYPE_CHECKING:
 
 
 __all__ = (
-    'CostQuery', 'StatQuery', 'DamageQuery',
+    'CostQuery', 'StatQuery', 'DamageQuery', 'HealQuery',
     'ModKind',
-    'CostLayer', 'StatLayer', 'DamageLayer',
+    'CostLayer', 'StatLayer', 'DamageLayer', 'HealLayer',
     'ModifierQuery', 'ModifierLayer',
     'IntModifier',
     'RulesEngine',
@@ -45,11 +45,20 @@ class DamageQuery:
     combat_defender: 'Entity | None' = None
 
 
+@dataclass(frozen=True, slots=True)
+class HealQuery:
+    game: 'Game'
+    source: 'Entity'
+    target: 'Entity'
+    amount: int
+
+
 class ModKind(Enum):
     COST = 'cost'
     ATTACK = 'attack'
     MAX_HP = 'max_hp'
     DAMAGE = 'damage'
+    HEAL = 'heal'
 
 
 class CostLayer(IntEnum):
@@ -77,8 +86,13 @@ class DamageLayer(IntEnum):
     PREVENT = 60
 
 
-ModifierQuery = CostQuery | StatQuery | DamageQuery
-ModifierLayer = CostLayer | StatLayer | DamageLayer
+class HealLayer(IntEnum):
+    ADD = 10
+    PREVENT = 60
+
+
+ModifierQuery = CostQuery | StatQuery | DamageQuery | HealQuery
+ModifierLayer = CostLayer | StatLayer | DamageLayer | HealLayer
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +246,14 @@ class RulesEngine:
         return self._apply_int_mods(
             base=q.amount,
             kind=ModKind.DAMAGE,
+            query=q,
+            clamp_min=0,
+        )
+
+    def heal(self, q: HealQuery) -> int:
+        return self._apply_int_mods(
+            base=q.amount,
+            kind=ModKind.HEAL,
             query=q,
             clamp_min=0,
         )
