@@ -18,29 +18,31 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True, eq=False)
 class RandomTransform(Transform):
     """Get `n` random entities from a list"""
-    n: int = 1
+    n: ValueExpr
 
     def apply(self, entities: list[Any], ctx: 'ActionContext', **kwargs) -> list[Any]:
-        if self.n <= 0 or not entities:
+        n = self.n.eval(ctx=ctx, **kwargs)
+        if n <= 0 or not entities:
             return []
 
         items = entities.copy()
         ctx.game.rng.shuffle(items)
 
-        return items[:self.n]
+        return items[:n]
 
     def __repr__(self) -> str:
-        return f"RANDOM({self.n})"
+        return f"RANDOM({self.n!r})"
 
 
 @dataclass(frozen=True, slots=True, eq=False)
 class MinMaxTransform(Transform):
     mode: Literal['min', 'max']
     key: ValueExpr
-    n: int = 1
+    n: ValueExpr
 
     def apply(self, entities: list[Any], ctx: 'ActionContext', **kwargs) -> list[Any]:
-        if self.n <= 0 or not entities:
+        n = self.n.eval(ctx=ctx, **kwargs)
+        if n <= 0 or not entities:
             return []
 
         sorted_entities = sorted(
@@ -48,11 +50,11 @@ class MinMaxTransform(Transform):
             key=lambda e: self.key.eval(ctx=ctx, entity=e, **kwargs),
             reverse=(self.mode == 'max'),
         )
-        return sorted_entities[:self.n]
+        return sorted_entities[:n]
 
     def __repr__(self) -> str:
         name = "MAX" if self.mode == 'max' else "MIN"
-        return f"{name}({self.key!r}, n={self.n})"
+        return f"{name}({self.key!r}, n={self.n!r})"
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -228,16 +230,16 @@ class CopyTransform(Transform):
         return f"{name}({', '.join(args)})"
 
 
-def RANDOM(n: int = 1) -> RandomTransform:
-    return RandomTransform(n)
+def RANDOM(n: int | ValueExpr = 1) -> RandomTransform:
+    return RandomTransform(to_value(n))
 
 
-def MIN(key: ValueExpr, n: int = 1) -> MinMaxTransform:
-    return MinMaxTransform('min', key=key, n=n)
+def MIN(key: ValueExpr, n: int | ValueExpr = 1) -> MinMaxTransform:
+    return MinMaxTransform('min', key=key, n=to_value(n))
 
 
-def MAX(key: ValueExpr, n: int = 1) -> MinMaxTransform:
-    return MinMaxTransform('max', key=key, n=n)
+def MAX(key: ValueExpr, n: int | ValueExpr = 1) -> MinMaxTransform:
+    return MinMaxTransform('max', key=key, n=to_value(n))
 
 
 def DISTINCT(key: ValueExpr | None = None) -> DistinctTransform:
@@ -345,10 +347,11 @@ AS_CARDS = AsCardsTransform
 @dataclass(frozen=True, slots=True, eq=False)
 class LimitPerTransform(Transform):
     key: ValueExpr
-    n: int
+    n: ValueExpr
 
     def apply(self, entities: list[Any], *, ctx: 'ActionContext', **kwargs) -> list[Any]:
-        if self.n <= 0:
+        n = self.n.eval(ctx=ctx, **kwargs)
+        if n <= 0:
             return []
 
         result = []
@@ -358,7 +361,7 @@ class LimitPerTransform(Transform):
             key = self.key.eval(ctx=ctx, entity=entity, **kwargs)
 
             count = counts.get(key, 0)
-            if count >= self.n:
+            if count >= n:
                 continue
 
             counts[key] = count + 1
@@ -367,8 +370,8 @@ class LimitPerTransform(Transform):
         return result
 
     def __repr__(self) -> str:
-        return f"LIMIT_PER({self.key!r}, {self.n})"
+        return f"LIMIT_PER({self.key!r}, {self.n!r})"
 
 
-def LIMIT_PER(key: Any, n: int) -> LimitPerTransform:
-    return LimitPerTransform(key=to_value(key), n=n)
+def LIMIT_PER(key: Any, n: int | ValueExpr) -> LimitPerTransform:
+    return LimitPerTransform(key=to_value(key), n=to_value(n))

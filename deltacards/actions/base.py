@@ -3,7 +3,7 @@ import types
 import typing
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Generator, Generic, Sequence, TYPE_CHECKING, TypeVar
+from typing import Any, ClassVar, Generator, Generic, Sequence, TYPE_CHECKING, TypeVar
 
 from deltacards.actions.results import ActionResult
 from deltacards.model.entity import Entity
@@ -113,6 +113,7 @@ def bind_ctx_var(ctx: ActionContext, name: str, value: Any) -> Generator:
 
 class Action:
     many_arg_names: tuple[str, ...] = ()
+    primary_result_type: ClassVar[type[ActionResult] | None] = None
 
     _arg_defs = {}
 

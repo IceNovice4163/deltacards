@@ -3,7 +3,7 @@ from typing import Any
 from deltacards.actions.base import Action
 from deltacards.actions.standard import Move, SetEntityState, SpendGold
 from deltacards.dsl.aggregates import COUNT
-from deltacards.dsl.selectors import BOARD_OF, DECK, HAND, HAND_OF, NextLostSoulSelector, SELF, YOU
+from deltacards.dsl.selectors import BOARD, BOARD_OF, DECK, HAND, HAND_OF, NextLostSoulSelector, SELF, YOU
 from deltacards.dsl.transforms import GENERATE_CARD
 from deltacards.dsl.values import EMPTY_SLOTS, HAS_ARTIFACT
 from deltacards.dsl.vars import StateVar
@@ -17,7 +17,9 @@ def Program(amount: int):
 
 
 def Switch(left, right):
-    return Check(SELF.pos <= 1).to(left, else_=right)
+    return Check(SELF & BOARD).to(
+        Check(SELF.pos <= 1).to(left, else_=right)
+    )
 
 
 def SwitchPiece(left, right):

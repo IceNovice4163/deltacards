@@ -52,6 +52,7 @@ from deltacards.dsl.core import (
 )
 from deltacards.dsl.discovery import DISCOVER
 from deltacards.dsl.history import (
+    ABILITY_TRIGGERS,
     AMOUNT,
     ANOTHER_SOUL_THAN,
     CARD_ID,
@@ -354,6 +355,7 @@ __all__ = (
     'CHOICE_NOT_SELECTED',
 
     # History queries
+    'ABILITY_TRIGGERS',
     'AMOUNT',
     'ANOTHER_SOUL_THAN',
     'CARD_ID',

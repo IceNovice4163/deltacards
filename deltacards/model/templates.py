@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from deltacards.model.enums import (
+    Ability,
     CardKeyword,
     CardRarity,
     CardStatusId,
@@ -17,6 +18,7 @@ class CardTemplate:
     name: str
     rarity: CardRarity
     cost: int
+    abilities: set[Ability]
     keywords: CardKeyword
     statuses: dict[CardStatusId, int]
     active_abilities: set[CardToggleableAbility]
@@ -31,6 +33,9 @@ class CardTemplate:
     @property
     def type(self) -> CardType:
         raise NotImplementedError
+
+    def has_ability(self, ability: Ability) -> bool:
+        return ability in self.abilities
 
     def has_keyword(self, keyword: CardKeyword) -> bool:
         return keyword in self.keywords

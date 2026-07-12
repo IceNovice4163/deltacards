@@ -129,6 +129,7 @@ class RulesEngine:
             ModKind.ATTACK: [],
             ModKind.MAX_HP: [],
             ModKind.DAMAGE: [],
+            ModKind.HEAL: [],
         }
 
     def invalidate(self) -> None:
@@ -137,17 +138,16 @@ class RulesEngine:
 
     def iter_modifier_sources(self) -> Iterable['Entity']:
         for player in self.game.players.values():
-            yield player
-            yield player.soul
-
-            for artifact in player.artifacts:
-                yield artifact
-
             for card in player.board.cards:
                 yield card
 
             for card in player.hand.cards:
                 yield card
+
+            yield player.soul
+
+            for artifact in player.artifacts:
+                yield artifact
 
     def iter_modifiers(self) -> Iterable[IntModifier]:
         for src in self.iter_modifier_sources():

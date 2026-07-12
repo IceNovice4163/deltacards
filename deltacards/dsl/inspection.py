@@ -52,6 +52,14 @@ def template_id_of(entity: Any, default: Any = _MISSING) -> int | Any:
     return template.id
 
 
+def template_name_of(entity: Any, default: Any = _MISSING) -> int | Any:
+    template = template_of(entity, default=_MISSING)
+    if template is _MISSING:
+        return default
+
+    return template.name
+
+
 def card_type_of(entity: Any, default: Any = _MISSING) -> CardType | Any:
     template = template_of(entity, default=_MISSING)
     if template is _MISSING:
@@ -292,6 +300,7 @@ def _template_attr(entity: Any, attr: str, default: Any = _MISSING) -> Any:
 
 _SPECIAL_ATTR_GETTERS = {
     'template_id': template_id_of,
+    'template_name': template_name_of,
 
     'card_id': card_id_of,
     'monster_id': card_id_of,

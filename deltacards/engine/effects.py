@@ -93,7 +93,14 @@ class Atomic(EffectBase):
 
 @dataclass(frozen=True)
 class StoreResult(EffectBase):
-    """Wrap an Action and store its outcome in ctx.vars[var.name]."""
+    """Run an Action and bind its primary result to a Var.
+
+    Action success and result production are separate concepts. An Action may
+    execute successfully while producing no primary result, for example when damage is prevented.
+
+    This wrapper succeeds only when the Action step succeeds and produces at
+    least one primary result. This makes it suitable as the condition of `.to(...)`.
+    """
     action: Action
     var: 'Var'
 
@@ -101,8 +108,15 @@ class StoreResult(EffectBase):
         self, *, ctx: ActionContext, **kwargs
     ) -> Generator[EffectStep, StepResult, EffectResult]:
         step_res: StepResult = yield EffectStep([self.action], kwargs=kwargs)
+
+        if self.action.primary_result_type is not None:
+            step_res = StepResult(
+                successes=step_res.successes,
+                results=tuple(r for r in step_res.results if isinstance(r, self.action.primary_result_type)),
+            )
+
         ctx.vars[self.var.name] = step_res
-        return EffectResult(success=step_res.success)
+        return EffectResult(success=step_res.success and bool(step_res.results))
 
 
 @dataclass(frozen=True)

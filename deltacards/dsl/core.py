@@ -11,6 +11,27 @@ if TYPE_CHECKING:
     from deltacards.model.entity import Entity
 
 
+SYMBOLS = {
+    operator.add: '+',
+    operator.sub: '-',
+    operator.mul: '*',
+    operator.truediv: '/',
+    operator.floordiv: '//',
+    operator.mod: '%',
+
+    operator.and_: '&',
+    operator.or_: '|',
+    operator.not_: '~',
+
+    operator.eq: '==',
+    operator.ne: '!=',
+    operator.lt: '<',
+    operator.le: '<=',
+    operator.ge: '>=',
+    operator.gt: '>',
+}
+
+
 # --------------------
 # Exceptions
 # --------------------
@@ -176,7 +197,7 @@ class BinaryValue(ValueExpr):
         )
 
     def __repr__(self) -> str:
-        return f"({self.left!r} {self.op.__name__} {self.right!r})"
+        return f"({self.left!r} {SYMBOLS[self.op]} {self.right!r})"
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -290,7 +311,7 @@ class ComparisonPredicate(Predicate):
         ))
 
     def __repr__(self) -> str:
-        return f"({self.left!r} {self.op.__name__} {self.right!r})"
+        return f"({self.left!r} {SYMBOLS[self.op]} {self.right!r})"
 
 
 # --------------------

@@ -33,7 +33,7 @@ class EntityMeta(ABCMeta):
 class Entity(ABC, metaclass=EntityMeta):
     __slots__ = 'id', 'state'
 
-    _abilities: dict
+    _abilities: dict[Ability, Any]
     _need_condition: Any | None
 
     var_definitions: dict
@@ -44,6 +44,10 @@ class Entity(ABC, metaclass=EntityMeta):
         self.id = id
 
         self.state: dict[str, Any] = {}
+
+    @classmethod
+    def declared_ability_names(cls) -> set[Ability]:
+        return set(cls._abilities.keys())
 
     @property
     def actions(self) -> ActionProxy:

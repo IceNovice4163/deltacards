@@ -1,5 +1,5 @@
 import math
-from typing import Any, Literal, TYPE_CHECKING
+from typing import Any, ClassVar, Literal, TYPE_CHECKING
 
 from deltacards.actions.base import (
     Action,
@@ -146,6 +146,8 @@ class Hit(Action):
     damage: Arg[int] = Arg()
     kind: Arg[DamageKind | None] = Arg(default=None)
 
+    primary_result_type: ClassVar[type[ActionResult] | None] = EntityDamagedResult
+
     def execute(self, target: 'Monster | Player', damage: int, kind: DamageKind | None, *, ctx: ActionContext, **kwargs):
         res = ctx.game.apply_damage(
             target=target,
@@ -178,7 +180,7 @@ class Heal(Action):
             target=target,
             amount=amount,
         )
-        final_amount = ctx.game.rules.damage(q)
+        final_amount = ctx.game.rules.heal(q)
 
         hp_recovered = target.heal(final_amount)
 
@@ -811,10 +813,14 @@ class SwapCards(Action):
         if zone not in (CardZone.HAND, CardZone.DECK):
             return ActionOutcome(success=False)
 
+        # Store IDs of original controllers beforehand, as swapping cards causes them to change
+        card1_controller_id = card1.controller_id
+        card2_controller_id = card2.controller_id
+
         ctx.game.remove_card_from_current_zone(card1)
         ctx.game.remove_card_from_current_zone(card2)
-        ctx.game.add_card_to_zone(card1, card2.controller_id, zone)
-        ctx.game.add_card_to_zone(card2, card1.controller_id, zone)
+        ctx.game.add_card_to_zone(card1, card2_controller_id, zone)
+        ctx.game.add_card_to_zone(card2, card1_controller_id, zone)
         ctx.game.rules.invalidate()
 
         return ActionOutcome(
@@ -1448,7 +1454,7 @@ class AttackAftermath(Action):
     defender: Arg['Monster | Player'] = Arg()
 
     def execute(self, attacker: 'Monster', defender: 'Monster | Player', *, ctx: ActionContext, **kwargs):
-        if 'combat_result' not in ctx.env:
+        if not ctx.env['combat_result']:
             # CombatDamage action failed
             return ActionOutcome(success=False)
 

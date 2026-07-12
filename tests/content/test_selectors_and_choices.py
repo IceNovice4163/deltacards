@@ -66,7 +66,7 @@ def test_card_changeofwinds():
 class Editor2(Monster):
     # Magic: Look at 5 random monsters and choose one. Add it to your hand.
     magic = YOU.choose(
-        DISCOVER(IS_MONSTER, n=5)
+        DISCOVER(IS_MONSTER, NON_TOKEN, n=5)
     ).to(
         CHOICE_SELECTED.to_hand()
     )

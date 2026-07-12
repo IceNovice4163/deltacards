@@ -16,14 +16,12 @@ class TheHeroine(Monster):
 
         return None
 
-    def revive(self, ctx: 'ActionContext', **kwargs):
+    def revive(self, ctx, **kwargs):
         base_attack = self.base.attack
         base_hp = self.base.hp
-        pos = self.pos
 
         self._reset()
 
-        self.pos = pos
         self.set_base_stats(attack=base_attack - 1, hp=base_hp - 2)
 
 

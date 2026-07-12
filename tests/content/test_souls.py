@@ -11,7 +11,7 @@ class Determination(Soul):
 
         self.extra_life = True
 
-    def game_start(self, ctx: 'ActionContext'):
+    def game_start(self, ctx):
         controller = self._get_controller(ctx)
         controller.next_lost_soul = 0
         return YOU.add_artifact(ARTIFACT_BY_NAME("Save"))

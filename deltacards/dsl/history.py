@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, TYPE_CHECKING
 
 from deltacards.actions.results import (
+    AbilityTriggeredResult,
     ActionResult,
     CardPlayedResult,
     SpellCastResult,
@@ -26,7 +27,7 @@ from deltacards.dsl.inspection import (
 from deltacards.dsl.selectors import YOU
 from deltacards.dsl.values import TEMPLATE_ID
 from deltacards.model.entity import Entity
-from deltacards.model.enums import CardType, PlayerId
+from deltacards.model.enums import Ability, CardType, PlayerId
 from deltacards.model.player import Player
 from deltacards.model.types import GoldSpendReason
 
@@ -275,6 +276,8 @@ class HistorySelector(TargetSelector):
     attacker: Any | None = None
     defender: Any | None = None
 
+    ability: Ability | None = None
+
     def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
         scope_test = self.scope.resolve(ctx=ctx, **kwargs)
 
@@ -311,6 +314,7 @@ class HistorySelector(TargetSelector):
         check_killer = killer_id is not None
         check_attacker = attacker_id is not None
         check_defender = defender_id is not None
+        check_ability = self.ability is not None
 
         result = []
         for entry in ctx.game.log_by_type[self.result_type]:
@@ -339,6 +343,9 @@ class HistorySelector(TargetSelector):
                 continue
 
             if check_defender and defender_id_of(entry, default=_MISSING) != defender_id:
+                continue
+
+            if check_ability and entry.ability is not self.ability:
                 continue
 
             result.append(entry)
@@ -395,6 +402,22 @@ def MONSTERS_DIED(
         controller=controller,
         killer=killer,
         turn_player=turn_player,
+    )
+
+
+def ABILITY_TRIGGERS(
+    *,
+    scope: HistoryScope = THIS_GAME,
+    controller: Any | None = None,
+    source: Any | None = None,
+    ability: Any | None = None,
+) -> HistorySelector:
+    return HistorySelector(
+        AbilityTriggeredResult,
+        scope=scope,
+        controller=controller,
+        source=source,
+        ability=ability,
     )
 
 

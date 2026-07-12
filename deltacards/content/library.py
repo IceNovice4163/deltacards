@@ -22,6 +22,8 @@ class CardLibrary:
         return self._by_name[name.lower()]
 
     def _load_template(self, d: dict) -> 'CardTemplate':
+        card_id = d['fixedId']
+
         keywords = CardKeyword.NONE
         statuses = {}
         active_abilities = set()
@@ -65,13 +67,23 @@ class CardLibrary:
                 case 'program':
                     active_abilities.add(CardToggleableAbility.PROGRAM)
                 case _:
-                    raise RuntimeError(f"Unknown card status {status['name']} on card with ID {d['fixedId']}")
+                    raise RuntimeError(f"Unknown card status {status['name']} on card with ID {card_id}")
+
+        # TODO
+        # Read and set abilities of cards based on their actual implementation classes
+        from deltacards.model.cards import cards
+        card_cls = cards.get(card_id)
+        if card_cls is not None:
+            abilities = cards[card_id].declared_ability_names()
+        else:
+            abilities = set()
 
         common = dict(
-            id=d['fixedId'],
+            id=card_id,
             name=d['name'],
             rarity=CardRarity[d['rarity']],
             cost=d['cost'],
+            abilities=abilities,
             keywords=keywords,
             statuses=statuses,
             active_abilities=active_abilities,
@@ -79,6 +91,10 @@ class CardLibrary:
             tribes=tuple(Tribe(tribe_id.lower()) for tribe_id in d['tribes']),
             soul_id=d['soul']['name'].lower() if d.get('soul') else None,
         )
+
+        # TODO temporary name fix as it's non-localized name in the cards file is incorrect
+        if common['id'] == 270:
+            common['name'] = "Thrashing Machine"
 
         match d['typeCard']:
             case CardType.MONSTER.value:

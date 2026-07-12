@@ -619,11 +619,8 @@ class Game:
         yield from player.board.cards
 
         if not board_only:
-            yield from player.hand.cards
-            if player.soul is not None:
-                yield player.soul
-            if player.artifacts:
-                yield from [artifact for artifact in player.artifacts if artifact.active]
+            yield player.soul
+            yield from [artifact for artifact in player.artifacts if artifact.active]
 
     def _iter_event_sources(self):
         for player in (self.turn_player, self.turn_player.opponent):
@@ -1004,6 +1001,16 @@ class Game:
 
             return []
 
+        except Exception as e:
+            # Attempt to restore an effect associated to the generator
+            tb = e.__traceback__
+            while tb is not None:
+                if tb.tb_frame.f_code is generator.gi_code:
+                    effect = tb.tb_frame.f_locals.get('self')
+                    raise RuntimeError(f"Exception while resolving {effect!r}") from e
+
+                tb = tb.tb_next
+
         # Custom generators use the same step/resume protocol as `EffectBase`:
         # every `yield` statement represents exactly one step and receives `StepResult` on resume.
         self._schedule_effect_step(
@@ -1019,7 +1026,6 @@ class Game:
         effects: Sequence[tuple[Entity, Any]],
         *,
         env: dict[str, Any],
-        kwargs: dict[str, Any],
         log_group_id: int,
         log_parent_id: int,
         log_depth: int,
@@ -1033,7 +1039,6 @@ class Game:
                 log_group_id=log_group_id,
                 log_parent_id=log_parent_id,
                 log_depth=log_depth,
-                **kwargs,
             )
 
     def _enqueue_action_calls(
@@ -1147,7 +1152,6 @@ class Game:
                         source=entity,
                         ctx=None,  # independent effect
                         env=pending.env.copy(),
-                        **pending.kwargs,
                     )
 
                 return []
@@ -1200,7 +1204,6 @@ class Game:
             self._enqueue_effect_calls(
                 result_handlers,
                 env=pending.env,
-                kwargs=pending.kwargs,
                 log_group_id=pending.log_group_id,
                 log_parent_id=action_log_id,
                 log_depth=pending.log_depth + 1,

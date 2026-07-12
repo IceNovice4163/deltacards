@@ -129,8 +129,8 @@ class VarAttrValue(ValueExpr):
     attr_name: str
 
     def eval(self, ctx: 'ActionContext', entity: Any | None = None, **kwargs):
-        step_res = self.var.eval(ctx=ctx, entity=entity, **kwargs)
-        return getattr(step_res, self.attr_name)
+        var = self.var.eval(ctx=ctx, entity=entity, **kwargs)
+        return getattr(var, self.attr_name)
 
     def eval_one(self, ctx: 'ActionContext', **kwargs) -> Any:
         return self.eval(ctx=ctx, **kwargs)
@@ -145,7 +145,7 @@ class VarAttrValue(ValueExpr):
         if name.startswith('__'):
             raise AttributeError(name)
 
-        if name == 'test':  # for evuluate_expr()
+        if name == 'test':  # for evaluate_expr()
             raise AttributeError(name)
 
         return VarAttrValue(self, name)

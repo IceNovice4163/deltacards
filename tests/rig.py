@@ -24,7 +24,7 @@ def load():
     try:
         LIBRARY.get(1)
     except KeyError:
-        with open('cards.json') as f:
+        with open('AllCards.json') as f:
             LIBRARY.load_templates(json.load(f))
 
 
