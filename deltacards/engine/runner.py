@@ -290,6 +290,7 @@ class GameRunner:
 
             if upd.results:
                 results.extend(upd.results)
+            if upd.log_records:
                 log_records.extend(upd.log_records)
 
             if upd.pending or upd.game_over:
@@ -308,6 +309,59 @@ class GameRunner:
     # --------------------
     # Player input API
     # --------------------
+
+    def _iter_play_candidates(self, player: Player):
+        empty_board_slots = [
+            pos
+            for pos in range(player.board.MAX_CARDS)
+            if player.board[pos] is None
+        ]
+
+        for card in list(player.hand.cards):
+            if isinstance(card, Monster):
+                for pos in empty_board_slots:
+                    ok, reason = self.game.can_play_from_hand(player=player, card_id=card.id)
+                    if not ok:
+                        continue
+
+                    yield PlayMonster(card_id=card.id, board_slot=pos)
+
+            elif isinstance(card, Spell):
+                ok, reason = self.game.can_play_from_hand(player=player, card_id=card.id)
+                if not ok:
+                    continue
+
+                yield PlaySpell(card_id=card.id)
+
+    def _iter_attack_candidates(self, player: Player):
+        defenders = [
+            player.opponent,
+            *player.opponent.board.cards,
+        ]
+
+        for attacker in list(player.board.cards):
+            for defender in defenders:
+                ok, reason = self.game.can_attack(
+                    attacker_id=attacker.id,
+                    defender_id=defender.id,
+                    initiated_by_player=player,
+                )
+                if not ok:
+                    continue
+
+                yield Attack(attacker_id=attacker.id, defender_id=defender.id)
+
+    def legal_player_actions(self, player_id: PlayerId) -> list[PlayerAction]:
+        if self.game.turn_player.id != player_id:
+            return []
+
+        player = self.game.player(player_id)
+
+        return [
+            *self._iter_play_candidates(player),
+            *self._iter_attack_candidates(player),
+            EndTurn(),
+        ]
 
     def provide_input(self, response: EngineInput) -> tuple[bool, str]:
         """Provide a response to a pending request."""

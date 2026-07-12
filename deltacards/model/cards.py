@@ -329,11 +329,6 @@ class Monster(Card[MonsterTemplate]):
         # (due to leaving the board)
         self.death_finalization_locks = 0
 
-    def __str__(self):
-        atk_style = 'atk-paralyzed' if self.get_status(CardStatusId.PARALYZED) else 'atk'
-        hp_style = 'hp-low' if self.hp < self.max_hp else 'hp'
-        return f"[{self.id}] [g]{self.cost}[/g]/[{atk_style}]{self.attack}[/{atk_style}]/[{hp_style}]{self.hp}[/{hp_style}] [monster]{self.template.name}[/monster]"
-
     def __repr__(self):
         return f"Monster({self.id}, {self.template!r}, {self.controller_id}, {self.zone}, {self.creator_id}, {self.base!r})"
 
@@ -375,21 +370,6 @@ class Monster(Card[MonsterTemplate]):
 
         self._attrs_cache.clear()
         self._invalidate_rules()
-
-    def to_str(self) -> str:
-        atk_style = 'atk-paralyzed' if self.get_status(CardStatusId.PARALYZED) else 'atk'
-        hp_style = 'hp-low' if self.hp < self.max_hp else 'hp'
-
-        extra_symbols = ''
-        if self.keywords & CardKeyword.CHARGE:
-            extra_symbols += '[green]↟[/green]'
-        if self.keywords & CardKeyword.HASTE:
-            extra_symbols += '[yellow]↑[/yellow]'
-        if self.keywords & CardKeyword.TAUNT:
-            extra_symbols += '⛨'
-
-        return f"[{self.id}] [b]{self.template.name}[/b] {extra_symbols}\n" \
-               f"[{atk_style}]{self.attack}[/{atk_style}]/[{hp_style}]{self.hp}[/{hp_style}]"
 
     @property
     def type(self) -> CardType:
@@ -466,7 +446,7 @@ class Monster(Card[MonsterTemplate]):
         self._invalidate_rules()
 
     def silence(self) -> bool:
-        if self.rarity == CardRarity.DETERMINATION:
+        if self.template.rarity == CardRarity.DETERMINATION:
             return False
 
         old_hp = self.hp
@@ -580,9 +560,6 @@ class Monster(Card[MonsterTemplate]):
 
 
 class Spell(Card[CardTemplate]):
-    def __str__(self):
-        return f"[{self.id}] [g]{self.cost}G[/g] [spell]{self.template.name}[/spell]"
-
     def __repr__(self):
         return f"Spell({self.id}, {self.template!r}, {self.controller_id}, {self.zone}, {self.creator_id}, {self.base!r})"
 
