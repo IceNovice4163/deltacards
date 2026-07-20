@@ -18,7 +18,7 @@ class CardTemplate:
     name: str
     rarity: CardRarity
     cost: int
-    abilities: set[Ability]
+    abilities: frozenset[Ability]
     keywords: CardKeyword
     statuses: dict[CardStatusId, int]
     active_abilities: set[CardToggleableAbility]

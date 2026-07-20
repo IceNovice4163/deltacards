@@ -1,8 +1,9 @@
-import json
 from importlib import import_module
 from pathlib import Path
 
+from deltacards.content.card_data import load_or_build_cards
 from deltacards.content.library import LIBRARY
+from deltacards.model.cards import cards
 
 
 CONTENT_MODULES = [
@@ -62,27 +63,27 @@ CONTENT_MODULES = [
     'deltacards.content.souls.standard',
 ]
 
-CARDS_JSON = Path(__file__).resolve().parents[2] / 'AllCards.json'
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SOURCE_CARDS_JSON = PROJECT_ROOT / 'AllCards.json'
+CACHE_CARDS_JSON = PROJECT_ROOT / 'data' / 'cards.json'
 
 
-def load():
-    try:
-        LIBRARY.get(1)
-    except KeyError:
-        pass
-    else:
-        return
+def load_templates(*, force_rebuild: bool = False) -> None:
+    LIBRARY.load_templates(
+        load_or_build_cards(
+            source_path=SOURCE_CARDS_JSON,
+            cache_path=CACHE_CARDS_JSON,
+            abilities_by_card={
+                card_id: card_cls.declared_ability_names()
+                for card_id, card_cls in cards.items()
+            },
+            force_rebuild=force_rebuild,
+        )
+    )
 
-    for name in CONTENT_MODULES:
-        import_module(name)
 
-    # TODO
-    with open(CARDS_JSON) as f:
-        data = json.load(f)
-        if isinstance(data, dict):
-            data = json.loads(data['cards'])
-            with open(CARDS_JSON, 'w') as fw:
-                json.dump(sorted(data, key=lambda x: x['id']), fw, indent=2)
+def load(*, force_rebuild: bool = False) -> None:
+    for module_name in CONTENT_MODULES:
+        import_module(module_name)
 
-    with open(CARDS_JSON) as f:
-        LIBRARY.load_templates(json.load(f))
+    load_templates(force_rebuild=force_rebuild)

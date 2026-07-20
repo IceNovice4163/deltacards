@@ -46,8 +46,8 @@ class Entity(ABC, metaclass=EntityMeta):
         self.state: dict[str, Any] = {}
 
     @classmethod
-    def declared_ability_names(cls) -> set[Ability]:
-        return set(cls._abilities.keys())
+    def declared_ability_names(cls) -> set[str]:
+        return set(ability.name for ability in cls._abilities.keys())
 
     @property
     def actions(self) -> ActionProxy:

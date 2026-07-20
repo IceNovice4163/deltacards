@@ -1,4 +1,7 @@
+from typing import Iterable
+
 from deltacards.model.enums import (
+    Ability,
     CardKeyword,
     CardRarity,
     CardStatusId,
@@ -22,97 +25,71 @@ class CardLibrary:
         return self._by_name[name.lower()]
 
     def _load_template(self, d: dict) -> 'CardTemplate':
-        card_id = d['fixedId']
+        card_id = d['id']
 
         keywords = CardKeyword.NONE
-        statuses = {}
-        active_abilities = set()
+        for keyword_name in d['keywords']:
+            keywords |= CardKeyword[keyword_name]
 
-        for status in d['statuses']:
-            match status['name']:
-                case 'charge':
-                    keywords |= CardKeyword.CHARGE
-                case 'haste':
-                    keywords |= CardKeyword.HASTE
-                case 'taunt':
-                    keywords |= CardKeyword.TAUNT
-                case 'kr':
-                    keywords |= CardKeyword.KR
-                case 'candy':
-                    keywords |= CardKeyword.CANDY
-                case 'armor':
-                    keywords |= CardKeyword.ARMOR
-                case 'transparency':
-                    keywords |= CardKeyword.TRANSPARENCY
-                case 'disarmed':
-                    keywords |= CardKeyword.DISARMED
-                case 'invulnerable':
-                    keywords |= CardKeyword.INVULNERABLE
-                case 'wanted':
-                    keywords |= CardKeyword.WANTED
-                case 'darkspawn':
-                    keywords |= CardKeyword.DARKSPAWN
-                case 'paralyzed':
-                    statuses[CardStatusId.PARALYZED] = status['counter']
-                case 'dodge':
-                    statuses[CardStatusId.DODGE] = status['counter']
-                case 'loop':
-                    statuses[CardStatusId.LOOP] = status['counter']
-                case 'shock':
-                    active_abilities.add(CardToggleableAbility.SHOCK)
-                case 'support':
-                    active_abilities.add(CardToggleableAbility.SUPPORT)
-                case 'bullseye':
-                    active_abilities.add(CardToggleableAbility.BULLSEYE)
-                case 'program':
-                    active_abilities.add(CardToggleableAbility.PROGRAM)
-                case _:
-                    raise RuntimeError(f"Unknown card status {status['name']} on card with ID {card_id}")
+        statuses = {
+            CardStatusId[status_name]: counter
+            for status_name, counter in d['statuses'].items()
+        }
 
-        # TODO
-        # Read and set abilities of cards based on their actual implementation classes
-        from deltacards.model.cards import cards
-        card_cls = cards.get(card_id)
-        if card_cls is not None:
-            abilities = cards[card_id].declared_ability_names()
-        else:
-            abilities = set()
+        active_abilities = set(
+            CardToggleableAbility[ability_name]
+            for ability_name in d['active_abilities']
+        )
 
         common = dict(
             id=card_id,
             name=d['name'],
             rarity=CardRarity[d['rarity']],
             cost=d['cost'],
-            abilities=abilities,
+            abilities=frozenset(Ability[ability_name] for ability_name in d['abilities']),
             keywords=keywords,
             statuses=statuses,
             active_abilities=active_abilities,
-            expansion=Expansion(d['extension'].lower()),
-            tribes=tuple(Tribe(tribe_id.lower()) for tribe_id in d['tribes']),
-            soul_id=d['soul']['name'].lower() if d.get('soul') else None,
+            expansion=Expansion[d['expansion']],
+            tribes=tuple(Tribe[name] for name in d['tribes']),
+            soul_id=d['soul_id'],
         )
 
-        # TODO temporary name fix as it's non-localized name in the cards file is incorrect
-        if common['id'] == 270:
-            common['name'] = "Thrashing Machine"
-
-        match d['typeCard']:
-            case CardType.MONSTER.value:
+        match d['type']:
+            case CardType.MONSTER.name:
                 return MonsterTemplate(
                     **common,
-                    attack=int(d['attack']),
-                    hp=int(d['hp']),
+                    attack=d['attack'],
+                    hp=d['hp'],
                 )
-            case CardType.SPELL.value:
+            case CardType.SPELL.name:
                 return SpellTemplate(**common)
             case _:
                 raise ValueError("Invalid card type")
 
-    def load_templates(self, data: list) -> None:
-        for d in data:
-            template = self._load_template(d)
-            self._by_id[template.id] = template
-            self._by_name[template.name.lower()] = template
+    def set_templates(self, templates: Iterable[CardTemplate]) -> None:
+        by_id = {}
+        by_name = {}
+
+        for template in templates:
+            if template.id in by_id:
+                raise ValueError(f"Duplicate card ID {template.id}")
+
+            template_name = template.name.lower()
+            if template_name in by_name:
+                raise ValueError(f"Duplicate card name {template.name}")
+
+            by_id[template.id] = template
+            by_name[template_name] = template
+
+        self._by_id = by_id
+        self._by_name = by_name
+
+    def load_templates(self, data: list[dict]) -> None:
+        self.set_templates(
+            self._load_template(d)
+            for d in data
+        )
 
 
 LIBRARY = CardLibrary()

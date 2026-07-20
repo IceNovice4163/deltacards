@@ -23,11 +23,11 @@ if TYPE_CHECKING:
 
 TTemplate = TypeVar('TTemplate', bound=CardTemplate)
 
-cards = {}
+cards: dict[int, type[Card]] = {}
 
 
 def card(card_id: int):
-    def wrapper(class_):
+    def wrapper(class_: type[Card]):
         if card_id in cards:
             raise ValueError(f"Card with ID {card_id} already exists")
 

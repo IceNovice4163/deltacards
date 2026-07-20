@@ -3,11 +3,11 @@ from deltacards.model.entity import Entity
 from deltacards.model.enums import PlayerId
 from deltacards.model.snapshots import SoulSnapshot
 
-SOULS = {}
+SOULS: dict[str, type['Soul']] = {}
 
 
-def soul(soul_id):
-    def wrapper(class_):
+def soul(soul_id: str):
+    def wrapper(class_: type['Soul']):
         if soul_id in SOULS:
             raise ValueError(f"Soul with ID {soul_id} already exists")
 

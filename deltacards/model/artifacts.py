@@ -9,11 +9,11 @@ from deltacards.model.snapshots import ArtifactSnapshot
 if TYPE_CHECKING:
     from deltacards.model.player import Player
 
-ARTIFACTS = {}
+ARTIFACTS: dict[int, type['Artifact']] = {}
 
 
-def artifact(artifact_id):
-    def wrapper(class_):
+def artifact(artifact_id: int):
+    def wrapper(class_: type['Artifact']):
         if artifact_id in ARTIFACTS:
             raise ValueError(f"Artifact with ID {artifact_id} already exists")
 

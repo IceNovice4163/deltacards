@@ -1,11 +1,11 @@
-import json
 from dataclasses import dataclass
 from typing import Sequence
 
+from deltacards.content.loader import load_templates
 from deltacards.model.enums import PlayerId
 from deltacards.engine.game import Game
 from deltacards.engine.runner import EngineUpdate, GameRunner
-from deltacards.model.cards import Card, LIBRARY, Monster, Spell
+from deltacards.model.cards import Card, Monster, Spell
 from deltacards.model.entity import Entity
 from deltacards.model.player import Player
 from deltacards.model.requests import Attack, ChoiceResponse, EndTurn, MulliganResponse, PendingChoiceRequest, \
@@ -17,15 +17,6 @@ from deltacards.model.souls import Soul, soul
 class EmptySoul(Soul):
     """Soul with no effects to simplify testing"""
     pass
-
-
-def load():
-    # Load only once
-    try:
-        LIBRARY.get(1)
-    except KeyError:
-        with open('AllCards.json') as f:
-            LIBRARY.load_templates(json.load(f))
 
 
 class RigError(Exception):
@@ -228,7 +219,7 @@ class TestRig:
         starting_gold: int = 100,
         auto_mulligan: bool = True,
     ) -> 'TestRig':
-        load()
+        load_templates()
 
         cfg = RigConfig(
             soul_id=soul_id,
