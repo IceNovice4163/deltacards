@@ -1,16 +1,22 @@
 from deltacards.dsl.api import *
 
+from ..card_templates import synthetic_card
 from ..rig import TestRig
 
 
-@card(36)
+@synthetic_card(
+    36,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class SnowdrakesMom(Monster):
-    # Delay: Summon a Vegetoid. Give it +1/+1 and TRANSPARENCY if this has any ATK buffs.
+    # Delay: Summon a Dummy. Give it +1/+1 and TRANSPARENCY if this has any ATK buffs.
     res: Var[StepResult] = Var(StepResult)
 
     magic = SELF.schedule_delay_effect()
 
-    delay = GENERATE_CARD("Vegetoid").summon().store_result(res).to(
+    delay = GENERATE_CARD("Dummy").summon().store_result(res).to(
         Check(SELF.buffs.attack > 0).to(
             Buff(target=res.monster_id, attack=+1, hp=+1)
             >> AddKeyword(target=res.monster_id, keyword=TRANSPARENCY)
@@ -61,7 +67,20 @@ def test_card_frozenenergy():
     assert dummy_2.get_status(CardStatusId.PARALYZED) == 0
 
 
-@card(128)
+@synthetic_card(
+    2,
+    cost=1,
+    attack=1,
+    hp=4,
+)
+class Froggit(Monster):
+    pass
+
+
+@synthetic_card(
+    128,
+    cost=1,
+)
 class FroggitTrio(Spell):
     frog_1: Var[Card] = Var(Card)
     frog_2: Var[Card] = Var(Card)

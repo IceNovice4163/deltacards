@@ -1,14 +1,7 @@
 from deltacards.dsl.api import *
 
+from ..card_templates import synthetic_card
 from ..rig import TestRig
-
-
-@card(83)
-class Shopping(Spell):
-    # Draw 3 cards costing 5 GOLD or less.
-    magic = YOU.draw(
-        (DECK & (COST <= 5)).first()
-    ) * 3
 
 
 def test_card_shopping():
@@ -19,7 +12,12 @@ def test_card_shopping():
     assert [c.template.id for c in rig.p1.hand] == [1] * 6
 
 
-@card(400)
+@synthetic_card(
+    400,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class Cogwheel(Monster):
     # Turn end: Send the most expensive card in your hand to your deck and draw a card.
     turn_end = (HAND >> MAX(COST)).to_deck() >> YOU.draw_next()
@@ -33,19 +31,6 @@ def test_card_cogwheel():
     rig.p1.end_turn()
     assert len(rig.p1.hand) == 3
     assert [c.template.id for c in rig.p1.hand][:2] == [1, 1]
-
-
-@card(552)
-class ChangeOfWinds(Spell):
-    # Look at the next 2 cards in your deck.
-    # Choose one to draw.
-    # Send the other to the bottom of your deck.
-    # Give them -1 COST.
-    magic = YOU.choose(DECK[:2]).to(
-        YOU.draw(CHOICE_SELECTED)
-        >> CHOICE_NOT_SELECTED.to_deck(pos='bottom')
-        >> (CHOICE_SELECTED | CHOICE_NOT_SELECTED).buff(cost=-1)
-    )
 
 
 def test_card_changeofwinds():
@@ -62,7 +47,12 @@ def test_card_changeofwinds():
     assert choices[1].cost == choices[1].base.cost - 1
 
 
-@card(246)
+@synthetic_card(
+    246,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class Editor2(Monster):
     # Magic: Look at 5 random monsters and choose one. Add it to your hand.
     magic = YOU.choose(
@@ -87,7 +77,10 @@ def test_card_editor2():
         assert rig.p1.hand[-1].id == choices[0].id
 
 
-@card(76)
+@synthetic_card(
+    76,
+    cost=1,
+)
 class Strength(Spell):
     # Give 3 random ally monsters +1/+1
     magic = (ALLY_MONSTERS >> RANDOM(3)).buff(attack=+1, hp=+1)
@@ -109,7 +102,12 @@ def test_card_strength():
         assert m.hp == m.base.hp + 1
 
 
-@card(468)
+@synthetic_card(
+    468,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class Rudolph(Monster):
     # Need: You have no other cards named Rudolph in your hand. Magic: Give +5 HP to you.
     need = ~EXISTS(

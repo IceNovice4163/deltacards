@@ -1,9 +1,15 @@
 from deltacards.dsl.api import *
 
+from ..card_templates import synthetic_card
 from ..rig import TestRig
 
 
-@card(923)
+@synthetic_card(
+    923,
+    cost=1,
+    attack=2,
+    hp=6,
+)
 class PixelKris(Monster):
     # Has +1 ATK for each missing HP.
     def iter_modifiers(self, game):
@@ -43,7 +49,12 @@ def test_card_pixelkris():
     assert defender.hp == defender.base.hp - 2
 
 
-@card(632)
+@synthetic_card(
+    632,
+    cost=1,
+    attack=2,
+    hp=5,
+)
 class Trashy(Monster):
     # This has +2 ATK on the enemy turn and takes no DMG while attacking.
     def iter_modifiers(self, game):
@@ -96,7 +107,12 @@ def test_card_trashy():
     assert defender.hp == defender.base.hp - 2
 
 
-@card(559)
+@synthetic_card(
+    559,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class LaggyTV(Monster):
     # Monsters in your hand have +1 COST. Whenever you play a monster, give it +1/+2.
     def iter_modifiers(self, game):
@@ -161,7 +177,12 @@ def test_card_laggytv():
     assert dummy_2.cost == dummy_2.base.cost
 
 
-@card(145)
+@synthetic_card(
+    145,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class DiamondBoy1(Monster):
     # All other non-Armor ally monsters take 1 less DMG (can't stack).
     def iter_modifiers(self, game):
@@ -189,7 +210,7 @@ class DiamondBoy1(Monster):
 
 
 def test_card_diamondboy1():
-    rig = TestRig.create(p1_deck=[145, 145, 1, 1], p2_deck=[737, 737])
+    rig = TestRig.create(p1_deck=[145, 145, 1, 1], p2_deck=[578, 578])
 
     monster_1 = rig.p1.hand[0]
     monster_2 = rig.p1.hand[1]
@@ -207,7 +228,7 @@ def test_card_diamondboy1():
     rig.p1.end_turn()
 
     rig.p2.play_spell(spell_1, target=dummy)
-    assert dummy.hp == dummy.base.hp - 1
+    assert dummy.hp == dummy.base.hp - 2
 
     rig.p2.play_spell(spell_2, target=dummy_with_armor)
-    assert dummy_with_armor.hp == dummy_with_armor.base.hp - 1
+    assert dummy_with_armor.hp == dummy_with_armor.base.hp - 2

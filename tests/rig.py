@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Sequence
 
-from deltacards.content.loader import load_templates
 from deltacards.model.enums import PlayerId
 from deltacards.engine.game import Game
 from deltacards.engine.runner import EngineUpdate, GameRunner
@@ -11,6 +10,8 @@ from deltacards.model.player import Player
 from deltacards.model.requests import Attack, ChoiceResponse, EndTurn, MulliganResponse, PendingChoiceRequest, \
     PendingMulliganRequest, PendingPlayerActionRequest, PlayMonster, PlaySpell, PlayerActionResponse
 from deltacards.model.souls import Soul, soul
+
+from .card_templates import load_test_templates
 
 
 @soul('empty_soul')
@@ -219,7 +220,7 @@ class TestRig:
         starting_gold: int = 100,
         auto_mulligan: bool = True,
     ) -> 'TestRig':
-        load_templates()
+        load_test_templates()
 
         cfg = RigConfig(
             soul_id=soul_id,

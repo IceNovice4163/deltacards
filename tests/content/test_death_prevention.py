@@ -1,9 +1,15 @@
 from deltacards.dsl.api import *
 
+from ..card_templates import synthetic_card
 from ..rig import TestRig
 
 
-@card(106)
+@synthetic_card(
+    106,
+    cost=9,
+    attack=7,
+    hp=8,
+)
 class TheHeroine(Monster):
     # Magic: Instead of dying, Erase 2 cards in your hand to return with -1/-2 base stats.
     def on_would_die(self, entity: Entity, game, **kwargs):

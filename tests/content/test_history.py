@@ -1,9 +1,13 @@
 from deltacards.dsl.api import *
 
+from ..card_templates import synthetic_card
 from ..rig import TestRig
 
 
-@card(598)
+@synthetic_card(
+    598,
+    cost=1,
+)
 class Gemstone(Spell):
     # Deal 1 DMG.
     targets = ALL_PLAYERS | ALL_MONSTERS
@@ -11,7 +15,12 @@ class Gemstone(Spell):
     magic = TARGET.hit(1)
 
 
-@card(548)
+@synthetic_card(
+    548,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class MagicCrystal(Monster):
     # Magic: Cast 4 Gemstones on random alive enemy monsters.
     # If you spent gold on spells last turn, add a Crystal Downpour to your hand.
@@ -48,7 +57,12 @@ def test_magic_crystal():
     assert [c.template.id for c in rig.p1.hand] == [1, 1, 1, 1]
 
 
-@card(386)
+@synthetic_card(
+    386,
+    cost=4,
+    attack=3,
+    hp=3,
+)
 class Pizzapants(Monster):
     # Magic: Gain +1/+1 for each other ally Pizzapants you played this game.
     played_count: Var[int] = Var(int)
@@ -82,7 +96,57 @@ def test_pizzapants():
     assert rig.p1.board[3].attack == rig.p1.board[3].hp == 5
 
 
-@card(794)
+@synthetic_card(
+    796,
+    cost=1,
+    tribes=(Tribe.GIGA_ATTACK,),
+)
+class GigaPunch(Spell):
+    pass
+
+
+@synthetic_card(
+    797,
+    cost=1,
+    tribes=(Tribe.GIGA_ATTACK,),
+)
+class GigaMissiles(Spell):
+    pass
+
+
+@synthetic_card(
+    798,
+    cost=1,
+    tribes=(Tribe.GIGA_ATTACK,),
+)
+class GigaGlass(Spell):
+    pass
+
+
+@synthetic_card(
+    799,
+    cost=1,
+    tribes=(Tribe.GIGA_ATTACK,),
+)
+class GigaBalls(Spell):
+    pass
+
+
+@synthetic_card(
+    721,
+    cost=1,
+    tribes=(Tribe.BARGAIN,),
+)
+class PressF1ForHelp(Spell):
+    pass
+
+
+@synthetic_card(
+    794,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class GIGAQueen(Monster):
     # Magic: Look At All Giga Attacks You Haven't Cast And Add One To Your Hand.
     magic = (

@@ -1,9 +1,15 @@
 from deltacards.dsl.api import *
 
+from ..card_templates import synthetic_card
 from ..rig import TestRig
 
 
-@card(26)
+@synthetic_card(
+    26,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class Parsnik(Monster):
     # Magic: Paralyze a monster. If it was already Paralyzed, deal 2 DMG to it.
     paralyze_result: Var[StepResult] = Var(StepResult)
@@ -42,7 +48,10 @@ def test_card_parsnik():
     assert dummy.hp == dummy.base.hp - 2
 
 
-@card(73)
+@synthetic_card(
+    73,
+    cost=1,
+)
 class ColdWinter(Spell):
     # Deal 11 DMG randomly split among all enemy monsters. Add a Change Of Winds to your hand for each one that died.
     hit_result: Var[StepResult] = Var(StepResult)
@@ -78,7 +87,10 @@ def test_card_coldwinter():
     assert [c.template.id for c in rig.p2.hand] == [1, 1, 1, 552, 552]
 
 
-@card(737)
+@synthetic_card(
+    737,
+    cost=1,
+)
 class IceShock(Spell):
     # Deal 2 DMG to a monster. If it kills, Paralyze the adjacent ones.
     targets = ALL_MONSTERS
@@ -115,7 +127,22 @@ def test_card_iceshock():
     assert rig.p1.board[2].get_status(CardStatusId.PARALYZED) == 2
 
 
-@card(62)
+@synthetic_card(
+    10001,
+    cost=1,
+    attack=1,
+    hp=4,
+)
+class Spear(Monster):
+    pass
+
+
+@synthetic_card(
+    62,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class Undyne(Monster):
     # Deal 1 DMG to the lowest HP enemy monster 10 times. Summon a Spear with base stats equal to DMG not dealt.
     damage_not_dealt: Var[int] = Var(int, default=0)
@@ -168,7 +195,42 @@ def test_card_undyne_no_spear_summon():
     assert [m.template.name for m in rig.p2.board if m] == ["Undyne"]
 
 
-@card(427)
+@synthetic_card(
+    10002,
+    cost=1,
+    attack=1,
+    hp=4,
+)
+class Flour(Monster):
+    pass
+
+
+@synthetic_card(
+    10003,
+    cost=1,
+    attack=1,
+    hp=4,
+)
+class Eggs(Monster):
+    pass
+
+
+@synthetic_card(
+    10004,
+    cost=1,
+    attack=1,
+    hp=4,
+)
+class Milk(Monster):
+    pass
+
+
+@synthetic_card(
+    427,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class KillerCook(Monster):
     # Magic: Add Flour, Eggs and Milk to your hand.
     X: Var[TargetSelector] = Var(TargetSelector)

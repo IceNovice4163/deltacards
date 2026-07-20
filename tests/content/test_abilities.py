@@ -1,9 +1,16 @@
 from deltacards.dsl.api import *
+from deltacards.model.enums import CardToggleableAbility
 
+from ..card_templates import synthetic_card
 from ..rig import TestRig
 
 
-@card(6)
+@synthetic_card(
+    6,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class Vegetoid(Monster):
     # Turn start: Heal 5 HP to you.
     turn_start = YOU.heal(5)
@@ -22,7 +29,12 @@ def test_card_vegetoid():
     assert rig.p1.obj.hp == 15
 
 
-@card(10)
+@synthetic_card(
+    10,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class Ice(Monster):
     # Dust: Paralyze the killer.
     dust = KILLER.paralyze()
@@ -55,7 +67,48 @@ def test_card_ice():
     assert big_monster_2.get_status(CardStatusId.PARALYZED) == 2
 
 
-@card(478)
+@synthetic_card(
+    10005,
+    cost=1,
+    attack=1,
+    hp=4,
+    tribes=(Tribe.ARACHNID,),
+)
+class Spider(Monster):
+    pass
+
+
+@synthetic_card(
+    10006,
+    name="Spider Donut",
+    cost=1,
+    attack=1,
+    hp=4,
+    tribes=(Tribe.ARACHNID,),
+)
+class SpiderDonut(Monster):
+    pass
+
+
+@synthetic_card(
+    10007,
+    name="Spider Croissant",
+    cost=1,
+    attack=1,
+    hp=4,
+    tribes=(Tribe.ARACHNID,),
+)
+class SpiderCroissant(Monster):
+    pass
+
+
+@synthetic_card(
+    478,
+    cost=1,
+    attack=1,
+    hp=4,
+    tribes=(Tribe.ARACHNID,),
+)
 class SpiderBakery(Monster):
     # Magic: Add a Spider to your hand and deck.
     # Synergy: Add a Spider Donut (to the hand) and a Spider Croissant (to the deck) instead.
@@ -98,7 +151,16 @@ def test_pippins():
     assert len(rig.p1.deck) == 18
 
 
-@card(760)
+@synthetic_card(
+    760,
+    cost=1,
+    attack=1,
+    hp=4,
+    active_abilities={
+        CardToggleableAbility.SHOCK,
+        CardToggleableAbility.SUPPORT,
+    },
+)
 class ButlerRalsei(Monster):
     # Shock: Give +2 HP to you.
     # Support: Program (1): Give the attacker +2 HP and trigger the Shock.
@@ -139,7 +201,12 @@ def test_butlerralsei():
     assert rig.p1.hp == 10 + 2 + 2
 
 
-@card(289)
+@synthetic_card(
+    289,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class RedWagon(Monster):
     # Magic: Catch an ally monster. Dust: Release it to your hand with +3/+3.
     targets = ALLY_MONSTERS
@@ -177,7 +244,13 @@ def test_card_redwagon():
     assert rig.p1.hand[1].hp == rig.p1.hand[1].base.hp + 3
 
 
-@card(855)
+@synthetic_card(
+    855,
+    cost=1,
+    active_abilities={
+        CardToggleableAbility.BULLSEYE,
+    },
+)
 class QuickDraw(Spell):
     # Make a monster Wanted and deal 3 DMG to it. Bullseye: Draw a card.
     targets = ALL_MONSTERS
@@ -212,8 +285,26 @@ def test_quickdraw():
     assert [c.template.id for c in rig.p1.hand] == [1]
 
 
-@card(903)
+@synthetic_card(
+    452,
+    cost=0,
+)
+class Recruitment(Spell):
+    pass
+
+
+@synthetic_card(
+    903,
+    cost=1,
+    attack=1,
+    hp=4,
+    active_abilities={
+        CardToggleableAbility.BULLSEYE,
+    },
+)
 class ZootSusie(Monster):
+    # Magic: Deal 4 DMG to a monster.
+    # Bullseye: Deal 3 DMG to its adjacent monsters and add a Recruitment to your hand.
     targets = ALL_MONSTERS
 
     magic = TARGET.hit(4)

@@ -1,9 +1,15 @@
 from deltacards.dsl.api import *
 
+from ..card_templates import synthetic_card
 from ..rig import TestRig
 
 
-@card(17)
+@synthetic_card(
+    17,
+    cost=9,
+    attack=5,
+    hp=9,
+)
 class KnightKnight(Monster):
     # After this attacks and survives, heal this by the amount of DMG dealt.
     @on_event(AttackResolvedResult)
@@ -41,9 +47,16 @@ def test_card_knightknight():
     assert attacker.zone is CardZone.DUSTPILE
 
 
-@card(60)
+@synthetic_card(
+    60,
+    cost=11,
+    attack=6,
+    hp=9,
+    keywords=CardKeyword.CHARGE,
+)
 class Papyrus(Monster):
-    # After this attacks and kills a monster, this can attack another monster. Magic: Program (2): Gain Armor.
+    # Charge. After this attacks and kills a monster, this can attack another monster.
+    # Magic: Program (2): Gain Armor.
     magic = Program(2).to(
         SELF.add_keyword(ARMOR)
     )

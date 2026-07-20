@@ -1,10 +1,36 @@
 from deltacards.dsl.api import *
 from deltacards.model.cards import CardBuffs
 
+from ..card_templates import synthetic_card
 from ..rig import TestRig
 
 
-@card(379)
+@synthetic_card(
+    378,
+    name="C-Round",
+    cost=1,
+    attack=1,
+    hp=4,
+)
+class CRound(Monster):
+    pass
+
+
+@synthetic_card(
+    380,
+    name="K-Round",
+    cost=1,
+    attack=1,
+    hp=4,
+)
+class KRound(Monster):
+    pass
+
+
+@synthetic_card(
+    379,
+    cost=1,
+)
 class Crown(Spell):
     # Give a monster +1/+2. If it's a C-Round, turn it into a K-Round instead. Draw a card.
     targets = ALL_MONSTERS
@@ -40,7 +66,13 @@ def test_card_crown():
     assert rig.p1.board[3].buffs.max_hp == 0
 
 
-@card(394)
+@synthetic_card(
+    394,
+    name="Mister Elegance",
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class MisterElegance(Monster):
     # Magic: Switch: [Gain +1/+1 and Armor] or [Summon a copy of this].
     magic = Switch(
@@ -75,7 +107,13 @@ def test_card_misterelegance():
     assert rig.p1.board[1].creator_base_identity == ('card', 394)
 
 
-@card(442)
+@synthetic_card(
+    442,
+    name="Sand Dog",
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class SandDog(Monster):
     # Magic: Summon an exact copy of this.
     magic = (SELF >> EXACT_COPY()).summon()
@@ -100,7 +138,15 @@ def test_card_sanddog():
     assert rig.p1.board[1].creator_base_identity == ('card', 442)
 
 
-@card(631)
+@synthetic_card(
+    631,
+    cost=1,
+    attack=1,
+    hp=4,
+    statuses={
+        CardStatusId.LOOP: 1,
+    },
+)
 class Shovel(Monster):
     magic = Check(LOOP_COPY & HAND & ~HAS_STATUS(LOOP)).to(
         Program(3).to(

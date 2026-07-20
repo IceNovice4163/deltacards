@@ -1,9 +1,15 @@
 from deltacards.dsl.api import *
 
+from ..card_templates import synthetic_card
 from ..rig import TestRig
 
 
-@card(236)
+@synthetic_card(
+    236,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class HotDogVulkin(Monster):
     # Magic: Deal 3 DMG to an opponent.
     magic = OPPONENT.hit(3)
@@ -16,7 +22,12 @@ def test_card_hotdogvulkin():
     assert rig.p2.obj.hp == rig.p2.obj.max_hp - 3
 
 
-@card(23)
+@synthetic_card(
+    23,
+    cost=1,
+    attack=1,
+    hp=4,
+)
 class Migospel(Monster):
     # Magic: Give a monster +3 HP.
     targets = ALL_MONSTERS
@@ -52,14 +63,6 @@ def test_card_knife():
     assert dummy.zone is CardZone.DUSTPILE
     assert len(rig.p1.obj.board) == 0
     assert rig.p2.hp == rig.p2.max_hp - dummy_cost
-
-
-@card(79)
-class Penetration(Spell):
-    # Silence a monster.
-    targets = ALL_MONSTERS
-
-    magic = TARGET.silence()
 
 
 def test_card_penetration():
