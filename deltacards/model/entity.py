@@ -4,6 +4,7 @@ from typing import Any, Iterable, TYPE_CHECKING, Type
 from deltacards.actions.methods import ActionProxy
 from deltacards.engine.modifiers import IntModifier
 from deltacards.model.enums import Ability
+from deltacards.model.types import BaseIdentity
 
 if TYPE_CHECKING:
     from deltacards.actions.standard import Action
@@ -54,7 +55,7 @@ class Entity(ABC, metaclass=EntityMeta):
         return ActionProxy(self)
 
     @property
-    def base_identity(self) -> tuple[str, int]:
+    def base_identity(self) -> BaseIdentity:
         raise NotImplementedError
 
     def get_ability(self, ability: Ability):

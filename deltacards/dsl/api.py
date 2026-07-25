@@ -16,6 +16,7 @@ from deltacards.engine.effects import (
     While,
 )
 from deltacards.model.cards import Card, Monster, Spell, card
+from deltacards.model.enchantments import Enchantment, enchantment
 from deltacards.model.entity import Entity, on_event
 from deltacards.model.enums import (
     Ability,
@@ -29,6 +30,7 @@ from deltacards.model.enums import (
     Tribe,
 )
 from deltacards.model.player import Player
+from deltacards.model.slots import BoardSlot
 
 from deltacards.dsl.aggregates import (
     COUNT,
@@ -93,6 +95,8 @@ from deltacards.dsl.predicates import (
     DAMAGED,
     DEAD,
     DT,
+    EMPTY_SLOT,
+    ENCHANTED_SLOT,
     EXPANSION,
     GENERATED,
     GENERATED_BY,
@@ -106,28 +110,42 @@ from deltacards.dsl.predicates import (
     NON_DT,
     NON_GENERATED,
     NON_TOKEN,
+    OCCUPIED_SLOT,
+    SLOT_HAS_ENCHANTMENT,
     TOKEN,
+    UNENCHANTED_SLOT,
 )
 from deltacards.dsl.selectors import (
     ADJACENT,
     ADJACENT_IN_HAND,
     ALLIES,
+    ALLY_ENCHANTMENTS,
     ALLY_MONSTERS,
+    ALLY_SLOTS,
+    ALL_ENCHANTMENTS,
+    ALL_SLOTS,
     ARTIFACT_BY_NAME,
     ARTIFACT_OF_PLAYER,
     ATTACKER,
     BOARD,
     BOARD_OF,
+    BOARD_SLOTS_OF,
     CARD_BY_NAME,
     CARD_LIBRARY,
     CONTROLLER,
     CONTROLLER_OF,
+    DEATH_SLOT,
     DECK,
     DECK_OF,
     DUSTPILE,
     DUSTPILE_OF,
+    ENCHANTMENTS_OF,
+    ENCHANTMENT_BY_NAME,
+    ENCHANTMENT_IN_SLOT,
     ENEMIES,
+    ENEMY_ENCHANTMENTS,
     ENEMY_MONSTERS,
+    ENEMY_SLOTS,
     ERASED,
     ERASED_OF,
     FRONT,
@@ -139,6 +157,7 @@ from deltacards.dsl.selectors import (
     LEFT_OF,
     ALL_MONSTERS,
     LOOP_COPY,
+    MONSTER_IN_SLOT,
     OPPONENT,
     OPPONENT_BOARD,
     OPPONENT_DECK,
@@ -153,6 +172,8 @@ from deltacards.dsl.selectors import (
     RIGHT_IN_HAND,
     RIGHT_OF,
     SELF,
+    SLOT_OF,
+    THIS_SLOT_MONSTER,
     TRIGGER_CARD,
     TARGET,
     TURN_PLAYER,
@@ -274,7 +295,7 @@ __all__ = (
     'UNIQUE_VALUES',
 
     # Selectors
-    'SELF', 'TARGET', 'KILLER', 'ATTACKER', 'LOOP_COPY', 'TRIGGER_CARD',
+    'SELF', 'TARGET', 'KILLER', 'ATTACKER', 'LOOP_COPY', 'TRIGGER_CARD', 'DEATH_SLOT',
     'YOU', 'CONTROLLER', 'OPPONENT', 'TURN_PLAYER', 'ALL_PLAYERS',
 
     'RESOLVE_ENTITY',
@@ -298,6 +319,13 @@ __all__ = (
     'CARD_LIBRARY', 'CARD_BY_NAME',
     'ARTIFACT_BY_NAME',
     'ARTIFACT_OF_PLAYER',
+
+    'BOARD_SLOTS_OF', 'SLOT_OF', 'MONSTER_IN_SLOT',
+    'ALLY_SLOTS', 'ENEMY_SLOTS', 'ALL_SLOTS',
+    'THIS_SLOT_MONSTER',
+
+    'ENCHANTMENT_BY_NAME', 'ENCHANTMENTS_OF', 'ENCHANTMENT_IN_SLOT',
+    'ALLY_ENCHANTMENTS', 'ENEMY_ENCHANTMENTS', 'ALL_ENCHANTMENTS',
 
     # Values
     'ID', 'TEMPLATE_ID',
@@ -328,6 +356,11 @@ __all__ = (
     'NON_TOKEN',
     'DT',
     'NON_DT',
+    'EMPTY_SLOT',
+    'OCCUPIED_SLOT',
+    'ENCHANTED_SLOT',
+    'UNENCHANTED_SLOT',
+    'SLOT_HAS_ENCHANTMENT',
 
     # Transforms
     'RANDOM',
@@ -404,6 +437,12 @@ __all__ = (
     'CardTemplate',
     'MonsterTemplate',
     'SpellTemplate',
+
+    # Enchantments
+    'Enchantment', 'enchantment',
+
+    # Board slots
+    'BoardSlot',
 
     # Entity
     'Entity', 'on_event',

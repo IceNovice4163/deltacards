@@ -53,6 +53,9 @@ CONTENT_MODULES = [
     'deltacards.content.cards.tribes.temmies',
     'deltacards.content.cards.tribes.thrashing_parts',
 
+    # Enchantments
+    'deltacards.content.enchantments.standard',
+
     # Artifacts
     'deltacards.content.artifacts.base',
     'deltacards.content.artifacts.common',

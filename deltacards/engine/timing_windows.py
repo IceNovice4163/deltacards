@@ -11,12 +11,14 @@ from deltacards.actions.standard import (
 )
 from deltacards.engine.effects import EffectStep
 from deltacards.model.cards import CardZone, Monster
+from deltacards.model.enchantments import Enchantment
 from deltacards.model.entity import Entity
 from deltacards.model.enums import Ability
 from deltacards.model.player import Player
+from deltacards.model.slots import BoardSlot
 
-BucketName = Literal['monster', 'soul', 'artifact']
-BUCKET_ORDER: tuple[BucketName, ...] = ('monster', 'soul', 'artifact')
+BucketName = Literal['monster', 'enchantment', 'soul', 'artifact']
+BUCKET_ORDER: tuple[BucketName, ...] = ('monster', 'enchantment', 'soul', 'artifact')
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +33,15 @@ def _snapshot_bucket(player: Player, bucket: BucketName) -> list[TimedWindowEntr
         return [
             TimedWindowEntry(bucket='monster', source_id=m.id)
             for m in list(player.board.cards)
+        ]
+
+    if bucket == 'enchantment':
+        return [
+            TimedWindowEntry(
+                bucket='enchantment',
+                source_id=enchantment.id,
+            )
+            for enchantment in player.game.active_enchantments(player)
         ]
 
     if bucket == 'soul':
@@ -69,6 +80,30 @@ def _resolve_valid_source(entry: TimedWindowEntry, ctx: ActionContext, player: P
             return None
         if entity.controller_id != player.id:
             return None
+
+        return entity
+
+    if entry.bucket == 'enchantment':
+        entity = ctx.game.entities.get(entry.source_id)
+        if not isinstance(entity, Enchantment):
+            return None
+
+        if not entity.active:
+            return None
+
+        if entity.controller_id != player.id:
+            return None
+
+        slot = ctx.game.entities.get(entity.slot_id)
+        if not isinstance(slot, BoardSlot):
+            return None
+
+        if slot.controller_id != player.id:
+            return None
+
+        if slot.enchantment_id != entity.id:
+            return None
+
         return entity
 
     if entry.bucket == 'soul':
@@ -78,6 +113,7 @@ def _resolve_valid_source(entry: TimedWindowEntry, ctx: ActionContext, player: P
         for artifact in player.artifacts:
             if artifact.id == entry.source_id and artifact.active:
                 return artifact
+
         return None
 
     raise ValueError(f"Invalid bucket: {entry.bucket}")

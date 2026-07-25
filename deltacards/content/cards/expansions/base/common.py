@@ -793,5 +793,6 @@ class Yandereplane(Monster):
 
 @card(951)
 class FireFountain(Monster):
-    # TODO enchantments
-    ...
+    dust = DEATH_SLOT.enchant(
+        ENCHANTMENT_BY_NAME('the-flame')
+    )

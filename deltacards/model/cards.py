@@ -16,6 +16,7 @@ from deltacards.model.enums import (
 )
 from deltacards.model.snapshots import CardSnapshot, MonsterSnapshot, SpellSnapshot
 from deltacards.model.templates import CardTemplate, MonsterTemplate
+from deltacards.model.types import BaseIdentity
 
 if TYPE_CHECKING:
     from deltacards.dsl.core import TargetSelector
@@ -87,7 +88,7 @@ class Card(Entity, Generic[TTemplate]):
         controller_id: PlayerId,
         zone: CardZone = CardZone.INVALID,
         creator_id: int | None = None,
-        creator_base_identity: tuple[str, int] | None = None,
+        creator_base_identity: BaseIdentity | None = None,
         base: BaseStats | None = None,
     ):
         super().__init__(id)
@@ -137,7 +138,7 @@ class Card(Entity, Generic[TTemplate]):
         self._zone = new_zone
 
     @property
-    def base_identity(self) -> tuple[str, int]:
+    def base_identity(self) -> BaseIdentity:
         return 'card', self.template.id
 
     @property
@@ -307,7 +308,7 @@ class Monster(Card[MonsterTemplate]):
         controller_id: PlayerId,
         zone: CardZone = CardZone.INVALID,
         creator_id: int | None = None,
-        creator_base_identity: tuple[str, int] | None = None,
+        creator_base_identity: BaseIdentity | None = None,
         base: BaseStats | None = None,
     ):
         super().__init__(id, template, controller_id, zone, creator_id, creator_base_identity, base)
@@ -333,11 +334,11 @@ class Monster(Card[MonsterTemplate]):
         return f"Monster({self.id}, {self.template!r}, {self.controller_id}, {self.zone}, {self.creator_id}, {self.base!r})"
 
     def _set_zone(self, new_zone: CardZone) -> None:
-        if new_zone == self._zone:
+        if new_zone is self._zone:
             return
 
         # When moving a monster from board to anywhere else, reset it's state.
-        if self._zone == CardZone.BOARD:
+        if self._zone is CardZone.BOARD:
             self._reset()
 
         self._zone = new_zone
@@ -539,8 +540,14 @@ class Monster(Card[MonsterTemplate]):
         )
 
     def get_snapshot_attrs(self) -> dict:
+        if self._zone is CardZone.BOARD:
+            slot_id = self.game.board_slot(self.controller_id, self.pos).id
+        else:
+            slot_id = None
+
         return dict(
             **super().get_snapshot_attrs(),
+            slot_id=slot_id,
             pos=self.pos,
             attack=self.attack,
             hp=self.hp,
@@ -584,7 +591,7 @@ def create_card(
     controller_id: PlayerId,
     zone: CardZone = CardZone.INVALID,
     creator_id: int | None = None,
-    creator_base_identity: tuple[str, int] | None = None,
+    creator_base_identity: BaseIdentity | None = None,
     base_attack: int | None = None,
     base_hp: int | None = None,
 ) -> Card:

@@ -448,17 +448,54 @@ class IceE(Monster):
 
 @card(940)
 class StrangeMachine(Monster):
-    # TODO enchantments
-    ...
+    magic = (
+        ENEMY_SLOTS[0].enchant(
+            ENCHANTMENT_BY_NAME('green-tile')
+        )
+        >> ENEMY_SLOTS[1].enchant(
+            ENCHANTMENT_BY_NAME('yellow-tile')
+        )
+        >> ENEMY_SLOTS[2].enchant(
+            ENCHANTMENT_BY_NAME('purple-tile')
+        )
+        >> ENEMY_SLOTS[3].enchant(
+            ENCHANTMENT_BY_NAME('orange-tile')
+        )
+    )
+
+    def iter_modifiers(self, game):
+        if (self.zone is not CardZone.BOARD) or self.silenced:
+            return
+
+        yield IntModifier(
+            kind=ModKind.DAMAGE,
+            layer=DamageLayer.ADD,
+            source=self,
+            description="This takes 1 less DMG for each enemy slot enchantment",
+            applies=lambda q: q.target is self,
+            apply=lambda damage, q: damage - len(
+                q.game.active_enchantments(
+                    q.game.player(self.controller_id).opponent
+                )
+            ),
+        )
 
 
 @card(942)
 class WallOfFire(Monster):
-    # TODO enchantments
-    ...
+    magic = (
+        ENEMY_SLOTS
+        & EMPTY_SLOT
+        & UNENCHANTED_SLOT
+    ).enchant(
+        ENCHANTMENT_BY_NAME('the-flame')
+    )
 
 
 @card(943)
 class FireE(Monster):
-    # TODO enchantments
-    ...
+    targets = ALLY_SLOTS
+
+    magic = TARGET.enchant(
+        ENCHANTMENT_BY_NAME('incinerator')
+    )

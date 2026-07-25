@@ -138,5 +138,12 @@ class RoaringKnight(Monster):
 
 @card(955)
 class HammerOfJustice(Monster):
-    # TODO enchantments
-    ...
+    targets = ALLY_MONSTERS
+
+    magic = (
+        TARGET.buff(attack=+3, hp=+3)
+        >> TARGET.add_keyword(HASTE)
+        >> SLOT_OF(TARGET).enchant(
+            ENCHANTMENT_BY_NAME('gersons-hammer')
+        )
+    )

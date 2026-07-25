@@ -3,8 +3,9 @@ from typing import ClassVar, TYPE_CHECKING
 
 from deltacards.actions.standard import *
 from deltacards.model.entity import Entity
-from deltacards.model.enums import PlayerId
+from deltacards.model.enums import Ability, PlayerId
 from deltacards.model.snapshots import ArtifactSnapshot
+from deltacards.model.types import BaseIdentity
 
 if TYPE_CHECKING:
     from deltacards.model.player import Player
@@ -53,11 +54,23 @@ class Artifact(Entity):
         return ctx.game.player(self.controller_id)
 
     @property
-    def base_identity(self) -> tuple[str, int]:
+    def base_identity(self) -> BaseIdentity:
         return (
             'artifact',
             [artifact_id for artifact_id, artifact_cls in ARTIFACTS.items() if self.__class__ is artifact_cls][0],
         )
+
+    def get_ability(self, ability: Ability):
+        if not self.active:
+            return None
+
+        return super().get_ability(ability)
+
+    def has_ability(self, ability: Ability) -> bool:
+        if not self.active:
+            return False
+
+        return super().has_ability(ability)
 
     def to_snapshot(self) -> ArtifactSnapshot:
         return ArtifactSnapshot(

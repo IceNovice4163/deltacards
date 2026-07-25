@@ -5,6 +5,8 @@ from deltacards.content.library import LIBRARY
 from deltacards.dsl.core import TargetSelector, TargetingError, ValueExpr, resolve_selector_value, to_value
 from deltacards.model.artifacts import ARTIFACTS
 from deltacards.model.cards import Card, CardZone, Monster
+from deltacards.model.enchantments import ENCHANTMENTS, Enchantment
+from deltacards.model.slots import BoardSlot
 from deltacards.model.snapshots import MonsterSnapshot
 
 if TYPE_CHECKING:
@@ -422,6 +424,179 @@ def ARTIFACT_OF_PLAYER(player: TargetSelector, name: str) -> PlayerArtifactSelec
 
 
 # ---------------------
+# Board slot selectors
+# ---------------------
+
+@dataclass(frozen=True, slots=True, eq=False)
+class PlayerBoardSlotsSelector(TargetSelector):
+    player: Any
+
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        player = self.player.eval_optional_one(ctx=ctx, **kwargs)
+        if player is None:
+            return []
+
+        return player.board_slots.copy()
+
+    def __repr__(self) -> str:
+        return f"BOARD_SLOTS_OF({self.player!r})"
+
+
+def BOARD_SLOTS_OF(player: Any) -> PlayerBoardSlotsSelector:
+    return PlayerBoardSlotsSelector(player)
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class SlotOfSelector(TargetSelector):
+    inner: TargetSelector
+
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        values = self.inner.eval(ctx=ctx, **kwargs)
+
+        result = []
+        seen_ids = set()
+
+        for value in values:
+            if isinstance(value, BoardSlot):
+                slot = value
+
+            elif isinstance(value, Monster):
+                if value.zone is CardZone.BOARD:
+                    slot = ctx.game.board_slot(value.controller_id, value.pos)
+                else:
+                    slot = None
+
+            elif isinstance(value, Enchantment):
+                slot = ctx.game.entity(value.slot_id)
+
+            else:
+                raise TypeError(
+                    f"SLOT_OF expects BoardSlot/Monster/Enchantment; "
+                    f"got {type(value).__name__}"
+                )
+
+            if (slot is None) or (slot.id in seen_ids):
+                continue
+
+            seen_ids.add(slot.id)
+            result.append(slot)
+
+        return result
+
+    def __repr__(self) -> str:
+        return f"SLOT_OF({self.target!r})"
+
+
+def SLOT_OF(target: Any) -> SlotOfSelector:
+    return SlotOfSelector(target)
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class MonsterInSlotSelector(TargetSelector):
+    slots: Any
+
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        values = self.slots.eval(ctx=ctx, **kwargs)
+
+        result = []
+
+        for value in values:
+            if not isinstance(value, BoardSlot):
+                raise TypeError(
+                    f"MONSTER_IN_SLOT expects BoardSlot, "
+                    f"got {type(value).__name__}"
+                )
+
+            if value.monster_id is None:
+                continue
+
+            entity = ctx.game.entity(value.monster_id)
+            if entity.zone is not CardZone.BOARD:
+                continue
+
+            result.append(entity)
+
+        return result
+
+    def __repr__(self) -> str:
+        return f"MONSTER_IN_SLOT({self.slots!r})"
+
+
+def MONSTER_IN_SLOT(slots: Any) -> MonsterInSlotSelector:
+    return MonsterInSlotSelector(slots)
+
+
+# ----------------------
+# Enchantment selectors
+# ----------------------
+
+@dataclass(frozen=True, slots=True, eq=False)
+class EnchantmentByNameSelector(TargetSelector):
+    name: str
+
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        return [enchantment for name, enchantment in ENCHANTMENTS.items() if name == self.name]
+
+    def __repr__(self) -> str:
+        return f"ENCHANTMENT_BY_NAME({self.name!r})"
+
+
+def ENCHANTMENT_BY_NAME(name: str) -> EnchantmentByNameSelector:
+    return EnchantmentByNameSelector(name=name)
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class PlayerEnchantmentsSelector(TargetSelector):
+    player: Any
+
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        player = self.player.eval_optional_one(ctx=ctx, **kwargs)
+        if player is None:
+            return []
+
+        return ctx.game.active_enchantments(player)
+
+    def __repr__(self) -> str:
+        return f"ENCHANTMENTS_OF({self.player!r})"
+
+
+def ENCHANTMENTS_OF(player: Any) -> PlayerEnchantmentsSelector:
+    return PlayerEnchantmentsSelector(player)
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class EnchantmentInSlotSelector(TargetSelector):
+    slots: Any
+
+    def eval(self, ctx: 'ActionContext', **kwargs) -> list[Any]:
+        values = self.slots.eval(ctx=ctx, **kwargs)
+
+        result = []
+
+        for value in values:
+            if not isinstance(value, BoardSlot):
+                raise TypeError(
+                    f"ENCHANTMENT_IN_SLOT expects BoardSlot, "
+                    f"got {type(value).__name__}"
+                )
+
+            enchantment = ctx.game.enchantment_on_slot(value)
+            if enchantment is not None:
+                result.append(enchantment)
+
+        return result
+
+    def __repr__(self) -> str:
+        return f"ENCHANTMENT_IN_SLOT({self.slots!r})"
+
+
+def ENCHANTMENT_IN_SLOT(
+    slots: Any,
+) -> EnchantmentInSlotSelector:
+    return EnchantmentInSlotSelector(slots)
+
+
+# ---------------------
 # Selectors for macros
 # ---------------------
 
@@ -453,6 +628,7 @@ KILLER = EnvSelector('killer')
 ATTACKER = EnvSelector('attacker')
 LOOP_COPY = EnvSelector('loop_copy')
 TRIGGER_CARD = EnvSelector('trigger_card')
+DEATH_SLOT = EnvSelector('death_slot')
 
 YOU = YouSelector()
 CONTROLLER = YOU
@@ -480,3 +656,13 @@ ALLIES = YOU | ALLY_MONSTERS
 ENEMIES = OPPONENT | ENEMY_MONSTERS
 
 CARD_LIBRARY = CardLibrarySelector()
+
+ALLY_SLOTS = BOARD_SLOTS_OF(YOU)
+ENEMY_SLOTS = BOARD_SLOTS_OF(OPPONENT)
+ALL_SLOTS = ALLY_SLOTS | ENEMY_SLOTS
+
+THIS_SLOT_MONSTER = MONSTER_IN_SLOT(SLOT_OF(SELF))
+
+ALLY_ENCHANTMENTS = ENCHANTMENTS_OF(YOU)
+ENEMY_ENCHANTMENTS = ENCHANTMENTS_OF(OPPONENT)
+ALL_ENCHANTMENTS = ALLY_ENCHANTMENTS | ENEMY_ENCHANTMENTS

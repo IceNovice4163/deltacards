@@ -77,12 +77,14 @@ class SpiderWeb(Spell):
     )
 
 
-# [183] Aftermath
-# Enchant 2 random occupied enemy slots with SCATTERING_DUST.
 @card(183)
 class Aftermath(Spell):
-    # TODO enchantments
-    ...
+    magic = (
+        (ENEMY_SLOTS & OCCUPIED_SLOT)
+        >> RANDOM(2)
+    ).enchant(
+        ENCHANTMENT_BY_NAME('scattering-dust')
+    )
 
 
 @card(261)

@@ -141,6 +141,9 @@ class RulesEngine:
             for card in player.board.cards:
                 yield card
 
+            for enchantment in self.game.active_enchantments(player):
+                yield enchantment
+
             for card in player.hand.cards:
                 yield card
 

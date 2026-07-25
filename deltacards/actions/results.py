@@ -2,8 +2,15 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from deltacards.model.enums import Ability, DamageKind, PlayerId
-from deltacards.model.snapshots import CardSnapshot, EntitySnapshot, MonsterSnapshot, PlayerSnapshot
-from deltacards.model.types import GoldSpendReason
+from deltacards.model.snapshots import (
+    BoardSlotSnapshot,
+    CardSnapshot,
+    EnchantmentSnapshot,
+    EntitySnapshot,
+    MonsterSnapshot,
+    PlayerSnapshot,
+)
+from deltacards.model.types import EnchantmentRemovalReason, GoldSpendReason
 
 __all__ = (
     'ActionResult',
@@ -22,6 +29,8 @@ __all__ = (
     'PlayerDefeatedResult',
     'GoldSpentResult',
     'AbilityTriggeredResult',
+    'BoardSlotEnchantedResult',
+    'EnchantmentRemovedResult',
 )
 
 
@@ -272,3 +281,31 @@ class AbilityTriggeredResult(ActionResult):
     entity_id: PlayerId | int
     entity: EntitySnapshot
     ability: Ability
+
+
+@dataclass(slots=True, kw_only=True)
+class BoardSlotEnchantedResult(ActionResult):
+    history_subject_attr: ClassVar[str | None] = 'enchantment'
+    history_player_id_attr: ClassVar[str | None] = 'player_id'
+    history_target_id_attr: ClassVar[str | None] = 'slot_id'
+
+    player_id: PlayerId
+    slot_id: int
+    slot: BoardSlotSnapshot
+    enchantment_id: int
+    enchantment: EnchantmentSnapshot
+    replaced_enchantment: EnchantmentSnapshot | None
+
+
+@dataclass(slots=True, kw_only=True)
+class EnchantmentRemovedResult(ActionResult):
+    history_subject_attr: ClassVar[str | None] = 'enchantment'
+    history_player_id_attr: ClassVar[str | None] = 'player_id'
+    history_target_id_attr: ClassVar[str | None] = 'slot_id'
+
+    player_id: PlayerId
+    slot_id: int
+    slot: BoardSlotSnapshot
+    enchantment_id: int
+    enchantment: EnchantmentSnapshot
+    reason: EnchantmentRemovalReason

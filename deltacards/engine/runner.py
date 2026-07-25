@@ -21,6 +21,7 @@ from deltacards.model.requests import (
     PendingChoiceRequest, PendingMulliganRequest, PendingPlayerActionRequest, PendingRequest,
     PlayMonster, PlaySpell, PlayerAction, PlayerActionResponse,
 )
+from deltacards.model.slots import BoardSlot
 from deltacards.model.souls import SOULS
 
 
@@ -102,9 +103,10 @@ class GameRunner:
             p2.is_first_turn = (first_turn_player is PlayerId.P2)
             self.game.turn_player = self.game.player(first_turn_player)
 
-            # Setup decks
+            # Setup starting Soul & Artifacts, deck and board
             for player_id in (PlayerId.P1, PlayerId.P2):
                 player = self.game.player(player_id)
+                player.board_slots = []
 
                 player.soul = SOULS[player.starting_soul_id](id=self.game.alloc_entity_id(), controller_id=player_id)
                 self.game.register_entity(player.soul, entity_id=player.soul.id)
@@ -123,6 +125,15 @@ class GameRunner:
 
                 if not self.no_initial_shuffle:
                     self.game.rng.shuffle(player.deck.cards)
+
+                for pos in range(player.board.MAX_CARDS):
+                    slot = BoardSlot(
+                        id=self.game.alloc_entity_id(),
+                        controller_id=player.id,
+                        pos=pos,
+                    )
+                    player.board_slots.append(slot)
+                    self.game.register_entity(slot, entity_id=slot.id)
 
             # Offer cards to mulligan
             offered_cards = {}

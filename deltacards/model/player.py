@@ -4,6 +4,7 @@ from deltacards.engine.constants import GOLD_GAINS
 from deltacards.model.containers import Board, CardContainer, Deck
 from deltacards.model.entity import Entity
 from deltacards.model.enums import PlayerId, Tribe
+from deltacards.model.slots import BoardSlot
 from deltacards.model.snapshots import PlayerSnapshot
 
 if TYPE_CHECKING:
@@ -20,7 +21,7 @@ class Player(Entity):
         soul_id: str,
         artifact_ids: Sequence[int],
     ):
-        self.id = player_id
+        super().__init__(player_id)
 
         self.starting_deck_card_ids = deck
         self.starting_soul_id = soul_id.lower()
@@ -31,6 +32,7 @@ class Player(Entity):
         self.artifacts: list['Artifact'] = None
 
         self.board = Board()
+        self.board_slots: list['BoardSlot'] = []
         self.hand = CardContainer()
         self.deck: Deck = None
         self.dustpile = CardContainer()

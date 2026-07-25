@@ -80,6 +80,24 @@ There is no general limit to how many Artifacts a player can have.
 
 ---
 
+## Board Slots and Enchantments
+Each player has four persistent Board Slots, numbered from left to right.
+
+A Board Slot may contain:
+- one Monster;
+- one Enchantment.
+
+The Monster and Enchantment in a slot are independent.
+An Enchantment remains attached to its slot when the Monster in that slot moves or dies.
+
+An effect can target an empty or occupied Board Slot.
+
+If an effect Enchants a slot that already has an Enchantment, the old Enchantment is removed and replaced by the new one.
+
+Enchantments may have their own abilities, continuous effects, and counters.
+
+---
+
 ## Card zones
 Deck: A face-down stack. Its current contents and order are hidden from both players.
 
@@ -222,6 +240,9 @@ A played Monster:
 
 Reactions to the Monster being played or summoned happen after it has entered the board but before its Magic and Synergy effects.
 
+If a Monster has a targeted Magic effect but there are no legal targets, the Monster may still be played.
+Its targeted Magic and its Synergy effects are skipped.
+
 ---
 
 ## Playing Spells
@@ -260,7 +281,7 @@ If a card has legal targets and no target was supplied, its controller is asked 
 
 If a Monster has a targeted Magic effect but there are no legal targets:
 - the Monster may still be played;
-- its Magic is skipped.
+- its targeted Magic and its Synergy effects are skipped.
 
 If a Spell requires a target but has no legal targets:
 - the Spell cannot be played.
@@ -289,7 +310,7 @@ If every defending Taunt Monster is Transparent, Taunt imposes no targeting rest
 ---
 
 ## Attack sequence and combat damage
-Each attacks consists of 3 steps:
+Each attack consists of 3 steps:
 1. Attack declaration, made either by a player or by an effect.
 2. Combat damage is dealt.
 3. Attack resolution step - Charge and Haste are removed; effects such as "After X attacks, do Y" resolve.
@@ -298,7 +319,7 @@ Each attacks consists of 3 steps:
 The following is performed in order:
 - Attack values of both attacker and defender are calculated;
 - the attacker deals damage equal to its Attack to the defender;
-- if defender is a Monster, it deals damage equal to its Attack to the attacker.
+- if the defender is a Monster, it deals damage equal to its Attack to the attacker.
 
 ---
 
@@ -336,6 +357,8 @@ Its runtime state has not reset at that point.
 If the Bullseye or the Dust effect moves it somewhere else, it is not forced into the Dustpile afterward.
 
 A Monster without a Bullseye or a Dust effect normally enters the Dustpile immediately.
+
+An Enchantment on the Monster's former Board Slot remains on that slot.
 
 ---
 
@@ -438,11 +461,13 @@ If effect text says "release a card" but doesn't specify controller of the newly
 ## Ordering of reactions and multi-target effects
 When several entities react to the same event, sources are ordered as follows:
 1. the current turn player's Monsters, from left to right;
-2. the current turn player's Soul;
-3. the current turn player's enabled Artifacts, in equip order;
-4. the other player's Monsters, from left to right;
-5. the other player's Soul;
-6. the other player's enabled Artifacts, in equip order.
+2. the current turn player's Enchantments, from left to right;
+3. the current turn player's Soul;
+4. the current turn player's enabled Artifacts, in equip order;
+5. the other player's Monsters, from left to right;
+6. the other player's Enchantments, from left to right;
+7. the other player's Soul;
+8. the other player's enabled Artifacts, in equip order.
 
 Reactions to an event resolve before follow-up effects produced by the same action.
 

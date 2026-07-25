@@ -13,6 +13,7 @@ if TYPE_CHECKING:
         Draw,
         DrawNext,
         EarnGold,
+        Enchant,
         Erase,
         HalveStats,
         Heal,
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
         Paralyze,
         RefreshAttacks,
         ReleaseCaughtCard,
+        RemoveEnchantment,
         RemoveKeyword,
         RemoveNegativeEffects,
         RemoveStatus,
@@ -41,8 +43,10 @@ if TYPE_CHECKING:
         ToggleArtifact,
         TransformArtifact,
         TransformCard,
+        TransformEnchantment,
         TriggerAbility,
         UpdateArtifactCounter,
+        UpdateEnchantmentCounter,
 )
     from deltacards.dsl.vars import Var
     from deltacards.model.artifacts import Artifact
@@ -311,6 +315,51 @@ class ActionMethods:
     def update_artifact_counter(self, delta: Any) -> 'UpdateArtifactCounter':
         from deltacards.actions.standard import UpdateArtifactCounter
         return UpdateArtifactCounter(artifact=self._action_target, delta=delta)
+
+    def enchant(self, enchantment: Any) -> 'Enchant':
+        from deltacards.actions.standard import Enchant
+        return Enchant(
+            slot=self._action_target,
+            enchantment=enchantment,
+        )
+
+    def remove_enchantment(
+        self,
+        *,
+        reason: str = 'removed',
+    ) -> 'RemoveEnchantment':
+        from deltacards.actions.standard import RemoveEnchantment
+        return RemoveEnchantment(
+            target=self._action_target,
+            reason=reason,
+        )
+
+    def expire_enchantment(self) -> 'RemoveEnchantment':
+        from deltacards.actions.standard import RemoveEnchantment
+        return RemoveEnchantment(
+            target=self._action_target,
+            reason='expired',
+        )
+
+    def transform_enchantment(
+        self,
+        enchantment: Any,
+    ) -> 'TransformEnchantment':
+        from deltacards.actions.standard import TransformEnchantment
+        return TransformEnchantment(
+            target=self._action_target,
+            enchantment=enchantment,
+        )
+
+    def update_enchantment_counter(
+        self,
+        delta: Any,
+    ) -> 'UpdateEnchantmentCounter':
+        from deltacards.actions.standard import UpdateEnchantmentCounter
+        return UpdateEnchantmentCounter(
+            enchantment=self._action_target,
+            delta=delta,
+        )
 
     def schedule_delay_effect(self) -> 'ScheduleEffect':
         from deltacards.actions.standard import ScheduleDelayEffect

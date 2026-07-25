@@ -29,6 +29,7 @@ from deltacards.engine.action_log import ActionLogRecord
 from deltacards.engine.effects import EffectBase, EffectResult, EffectStep, StepResult
 from deltacards.engine.modifiers import DamageQuery, RulesEngine
 from deltacards.model.cards import Card, CardZone, Monster, Spell, create_card
+from deltacards.model.enchantments import Enchantment
 from deltacards.model.entity import Entity
 from deltacards.model.enums import (
     Ability,
@@ -39,6 +40,8 @@ from deltacards.model.enums import (
 )
 from deltacards.model.player import Player
 from deltacards.model.requests import PendingRequest
+from deltacards.model.slots import BoardSlot
+from deltacards.model.types import BaseIdentity
 
 T = TypeVar('T')
 
@@ -178,6 +181,24 @@ class Game:
 
         return self.entities[target_id]
 
+    def board_slot(
+        self,
+        player: Player | PlayerId,
+        pos: int,
+    ) -> BoardSlot:
+        if isinstance(player, PlayerId):
+            player = self.player(player)
+
+        if not isinstance(player, Player):
+            raise TypeError(
+                f"Expected Player or PlayerId, got {type(player).__name__}"
+            )
+
+        if not 0 <= pos < player.board.MAX_CARDS:
+            raise IndexError(f"Invalid board slot: {pos}")
+
+        return player.board_slots[pos]
+
     def winner_id(self) -> PlayerId | None:
         if not self.dead_players:
             return None
@@ -221,7 +242,7 @@ class Game:
         controller_id: PlayerId,
         zone: CardZone = CardZone.INVALID,
         creator_id: int | None = None,
-        creator_base_identity: tuple[str, int] | None = None,
+        creator_base_identity: BaseIdentity | None = None,
         base_attack: int | None = None,
         base_hp: int | None = None,
     ) -> Card:
@@ -245,7 +266,7 @@ class Game:
         card: Card,
         controller_id: PlayerId,
         creator_id: int | None = None,
-        creator_base_identity: tuple[str, int] | None = None,
+        creator_base_identity: BaseIdentity | None = None,
     ) -> Card:
         """Create a base copy of a card from template."""
         if not isinstance(card, Card):
@@ -263,7 +284,7 @@ class Game:
         card: Card,
         controller_id: PlayerId,
         creator_id: int | None = None,
-        creator_base_identity: tuple[str, int] | None = None,
+        creator_base_identity: BaseIdentity | None = None,
     ) -> Card:
         """Create an exact copy of a card."""
         new_card = self.create_card_copy(
@@ -290,6 +311,14 @@ class Game:
             if controller.board[card.pos] is not card:
                 raise RuntimeError("Board position mismatch")
 
+            slot = self.board_slot(controller, card.pos)
+            if slot.monster_id != card.id:
+                raise RuntimeError(
+                    f"Board slot monster mismatch: slot={slot.id}, "
+                    f"expected={card.id}, actual={slot.monster_id}"
+                )
+
+            slot.monster_id = None
             controller.board[card.pos] = None
             card.pos = None
             card.marked_for_destruction = False
@@ -325,8 +354,13 @@ class Game:
             if controller.board[pos] is not None:
                 raise RuntimeError("Board position is already occupied")
 
+            slot = self.board_slot(controller, pos)
+            if slot.monster_id is not None:
+                raise RuntimeError(f"Board slot {slot.id} already has monster_id={slot.monster_id}")
+
             card.pos = pos
             controller.board[card.pos] = card
+            slot.monster_id = card.id
 
         elif card.zone is CardZone.DECK:
             if pos is None:
@@ -423,6 +457,11 @@ class Game:
         if controller.board[monster.pos] is not monster:
             raise RuntimeError("Board position mismatch")
 
+        slot = self.board_slot(controller, monster.pos)
+        if slot.monster_id != monster.id:
+            raise RuntimeError(f"Board slot monster mismatch for dying monster {monster.id}")
+
+        slot.monster_id = None
         controller.board[monster.pos] = None
         monster.pos = None
 
@@ -458,6 +497,137 @@ class Game:
         # If a monster was moved somewhere else by an effect, do not reset it
         self.rules.invalidate()
         return False
+
+    # --------------------
+    # Enchantments
+    # --------------------
+
+    def enchantment_on_slot(
+        self,
+        slot: BoardSlot,
+    ) -> Enchantment | None:
+        if not isinstance(slot, BoardSlot):
+            raise TypeError(
+                f"Expected BoardSlot, got {type(slot).__name__}"
+            )
+
+        if slot.enchantment_id is None:
+            return None
+
+        entity = self.entity(slot.enchantment_id)
+        if not isinstance(entity, Enchantment):
+            raise RuntimeError(
+                f"Slot {slot.id} points to non-enchantment entity {entity!r}"
+            )
+
+        if not entity.active:
+            raise RuntimeError(
+                f"Slot {slot.id} points to inactive enchantment {entity.id}"
+            )
+
+        if entity.slot_id != slot.id:
+            raise RuntimeError(
+                f"Enchantment {entity.id} has slot_id={entity.slot_id}, "
+                f"but is attached to slot {slot.id}"
+            )
+
+        return entity
+
+    def active_enchantments(
+        self,
+        player: Player | PlayerId,
+    ) -> list[Enchantment]:
+        if isinstance(player, PlayerId):
+            player = self.player(player)
+
+        if not isinstance(player, Player):
+            raise TypeError(
+                f"Expected Player or PlayerId, got {type(player).__name__}"
+            )
+
+        result = []
+        for slot in player.board_slots:
+            enchantment = self.enchantment_on_slot(slot)
+            if enchantment is not None:
+                result.append(enchantment)
+
+        return result
+
+    def create_enchantment(
+        self,
+        enchantment_type: type[Enchantment],
+        slot: BoardSlot,
+        *,
+        creator_id: int | None = None,
+        creator_base_identity: BaseIdentity | None = None,
+    ) -> Enchantment:
+        if not isinstance(slot, BoardSlot):
+            raise TypeError(
+                f"Expected BoardSlot, got {type(slot).__name__}"
+            )
+
+        if not isinstance(enchantment_type, type):
+            raise TypeError(
+                f"Expected Enchantment class, got {type(enchantment_type).__name__}"
+            )
+
+        if not issubclass(enchantment_type, Enchantment):
+            raise TypeError(
+                f"Expected Enchantment class, got {enchantment_type!r}"
+            )
+
+        if slot.enchantment_id is not None:
+            raise RuntimeError(
+                f"Board slot {slot.id} is already enchanted"
+            )
+
+        new_enchantment = enchantment_type(
+            id=self.alloc_entity_id(),
+            controller_id=slot.controller_id,
+            slot_id=slot.id,
+            creator_id=creator_id,
+            creator_base_identity=creator_base_identity,
+        )
+
+        self.register_entity(
+            new_enchantment,
+            entity_id=new_enchantment.id,
+        )
+
+        slot.enchantment_id = new_enchantment.id
+        self.rules.invalidate()
+
+        return new_enchantment
+
+    def remove_enchantment(
+        self,
+        enchantment: Enchantment,
+    ) -> bool:
+        if not isinstance(enchantment, Enchantment):
+            raise TypeError(
+                f"Expected Enchantment, got {type(enchantment).__name__}"
+            )
+
+        if not enchantment.active:
+            return False
+
+        slot_entity = self.entity(enchantment.slot_id)
+        if not isinstance(slot_entity, BoardSlot):
+            raise RuntimeError(
+                f"Enchantment {enchantment.id} points to a non-slot entity"
+            )
+
+        if slot_entity.enchantment_id != enchantment.id:
+            raise RuntimeError(
+                f"Slot/enchantment attachment mismatch for "
+                f"enchantment {enchantment.id}"
+            )
+
+        slot_entity.enchantment_id = None
+        enchantment.active = False
+
+        self.rules.invalidate()
+        return True
 
     # --------------------------
     # Target & choice filtering
@@ -618,9 +788,12 @@ class Game:
     def _iter_event_sources_of_player(self, player: Player, board_only: bool = False):
         yield from player.board.cards
 
-        if not board_only:
-            yield player.soul
-            yield from [artifact for artifact in player.artifacts if artifact.active]
+        if board_only:
+            return
+
+        yield from self.active_enchantments(player)
+        yield player.soul
+        yield from [artifact for artifact in player.artifacts if artifact.active]
 
     def _iter_event_sources(self):
         for player in (self.turn_player, self.turn_player.opponent):
@@ -1495,6 +1668,42 @@ class Game:
                     expected_controller=player.id,
                     expected_pos=pos,
                 )
+
+            for pos, slot in enumerate(player.board_slots):
+                assert isinstance(slot, BoardSlot)
+                assert slot.controller_id == player.id
+                assert slot.owner_id == player.id
+                assert slot.pos == pos
+                assert self.entity(slot.id) is slot
+
+                board_monster = player.board[pos]
+                expected_monster_id = (
+                    board_monster.id
+                    if board_monster is not None
+                    else None
+                )
+                assert slot.monster_id == expected_monster_id, (
+                    f"P{player.id.value} slot {pos}: "
+                    f"slot.monster_id={slot.monster_id}, "
+                    f"board monster={expected_monster_id}"
+                )
+
+                if slot.enchantment_id is not None:
+                    enchantment = self.entity(slot.enchantment_id)
+                    assert isinstance(enchantment, Enchantment)
+                    assert enchantment.active
+                    assert enchantment.slot_id == slot.id
+                    assert enchantment.controller_id == player.id
+
+        for entity in self.entities.values():
+            if isinstance(entity, Enchantment):
+                slot = self.entity(entity.slot_id)
+                assert isinstance(slot, BoardSlot)
+
+                if entity.active:
+                    assert slot.enchantment_id == entity.id
+                else:
+                    assert slot.enchantment_id != entity.id
 
         for index, c in enumerate(self.stack):
             _register(

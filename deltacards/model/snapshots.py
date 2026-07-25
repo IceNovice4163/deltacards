@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from deltacards.model.enums import CardKeyword, CardStatusId, CardToggleableAbility, CardType, CardZone, PlayerId, Tribe
+from deltacards.model.types import BaseIdentity
 
 if TYPE_CHECKING:
     from deltacards.model.cards import BaseStats, CardBuffs, CardTemplate, CaughtCardData
@@ -34,8 +35,8 @@ class CardSnapshot(EntitySnapshot):
     caught_card: 'CaughtCardData | None'
 
     zone: CardZone
-    creator_id: int
-    creator_base_identity: tuple[str, int] | None
+    creator_id: int | None
+    creator_base_identity: BaseIdentity | None
     cost: int
 
     @property
@@ -58,7 +59,9 @@ class MonsterSnapshot(CardSnapshot):
     has_attacked: bool
     hp_missing: int
 
+    slot_id: int | None
     pos: int | None
+
     attack: int
     hp: int
     max_hp: int
@@ -83,3 +86,26 @@ class ArtifactSnapshot(EntitySnapshot):
     controller_id: PlayerId
     counter: int
     active: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoardSlotSnapshot(EntitySnapshot):
+    id: int
+    controller_id: PlayerId
+    pos: int
+
+    monster_id: int | None
+    enchantment_id: int | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class EnchantmentSnapshot(EntitySnapshot):
+    id: int
+    name: str
+    controller_id: PlayerId
+    slot_id: int
+    counter: int
+    active: bool
+
+    creator_id: int | None
+    creator_base_identity: BaseIdentity | None

@@ -16,6 +16,7 @@ from deltacards.dsl.inspection import (
 )
 from deltacards.dsl.values import RARITY
 from deltacards.model.cards import Card
+from deltacards.model.enchantments import ENCHANTMENTS
 from deltacards.model.enums import (
     Ability,
     CardKeyword,
@@ -25,6 +26,7 @@ from deltacards.model.enums import (
     Expansion,
     Tribe,
 )
+from deltacards.model.slots import BoardSlot
 from deltacards.model.templates import CardTemplate
 
 if TYPE_CHECKING:
@@ -168,6 +170,53 @@ class GeneratedByPredicate(Predicate):
         return f"GENERATED_BY({self.creator!r})"
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class EmptyBoardSlotPredicate(Predicate):
+    empty: bool
+
+    def test(self, entity: BoardSlot, ctx: 'ActionContext', **kwargs) -> bool:
+        if not isinstance(entity, BoardSlot):
+            return False
+
+        return (entity.monster_id is None) is self.empty
+
+    def __repr__(self) -> str:
+        return "EMPTY_SLOT" if self.empty else "OCCUPIED_SLOT"
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class EnchantedBoardSlotPredicate(Predicate):
+    enchanted: bool
+
+    def test(self, entity: BoardSlot, ctx: 'ActionContext', **kwargs) -> bool:
+        if not isinstance(entity, BoardSlot):
+            return False
+
+        has_enchantment = ctx.game.enchantment_on_slot(entity) is not None
+        return has_enchantment is self.enchanted
+
+    def __repr__(self) -> str:
+        return "ENCHANTED_SLOT" if self.enchanted else "UNENCHANTED_SLOT"
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class SlotHasEnchantmentPredicate(Predicate):
+    name: str
+
+    def test(self, entity: BoardSlot, ctx: 'ActionContext', **kwargs) -> bool:
+        if not isinstance(entity, BoardSlot):
+            return False
+
+        enchantment = ctx.game.enchantment_on_slot(entity)
+        if enchantment is None:
+            return False
+
+        return type(enchantment) is ENCHANTMENTS[self.name]
+
+    def __repr__(self) -> str:
+        return f"SLOT_HAS_ENCHANTMENT({self.name})"
+
+
 IS_MONSTER = IsTypePredicate(CardType.MONSTER)
 IS_SPELL = IsTypePredicate(CardType.SPELL)
 
@@ -193,3 +242,11 @@ NON_TOKEN = (RARITY < CardRarity.TOKEN)
 
 DT = (RARITY == CardRarity.DETERMINATION)
 NON_DT = (RARITY != CardRarity.DETERMINATION)
+
+EMPTY_SLOT = EmptyBoardSlotPredicate(True)
+OCCUPIED_SLOT = EmptyBoardSlotPredicate(False)
+
+ENCHANTED_SLOT = EnchantedBoardSlotPredicate(True)
+UNENCHANTED_SLOT = EnchantedBoardSlotPredicate(False)
+
+SLOT_HAS_ENCHANTMENT = lambda name: SlotHasEnchantmentPredicate(name)

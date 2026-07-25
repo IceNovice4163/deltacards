@@ -10,6 +10,7 @@ from deltacards.model.enums import (
     Expansion,
     Tribe,
 )
+from deltacards.model.types import BaseIdentity
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -27,7 +28,7 @@ class CardTemplate:
     soul_id: int | None
 
     @property
-    def base_identity(self) -> tuple[str, int]:
+    def base_identity(self) -> BaseIdentity:
         return 'card', self.id
 
     @property

@@ -19,6 +19,7 @@ from deltacards.model.cards import (
     Monster,
     Spell,
 )
+from deltacards.model.enchantments import Enchantment
 from deltacards.model.entity import Entity
 from deltacards.model.enums import (
     Ability,
@@ -33,8 +34,12 @@ from deltacards.model.requests import (
     ChooseEntityPrompt,
     PendingChoiceRequest,
 )
+from deltacards.model.slots import BoardSlot
 from deltacards.model.snapshots import CardSnapshot
-from deltacards.model.types import GoldSpendReason
+from deltacards.model.types import (
+    EnchantmentRemovalReason,
+    GoldSpendReason,
+)
 
 if TYPE_CHECKING:
     from deltacards.dsl.vars import StateVar, Var
@@ -61,6 +66,7 @@ __all__ = (
     'Attack', 'CombatDamage', 'AttackAftermath', 'RefreshAttacks',
     'EarnGold', 'SpendGold', 'SetGold',
     'AddArtifact', 'ToggleArtifact', 'TransformArtifact', 'UpdateArtifactCounter',
+    'Enchant', 'RemoveEnchantment', 'TransformEnchantment', 'UpdateEnchantmentCounter',
     'ScheduleEffect', 'ScheduleDelayEffect',
     'SkipNextTurn', 'AdvanceTurn', 'ResolveScheduledEffectsAction',
     'PlayerStartTurnAction', 'PlayerEndTurnAction',
@@ -233,6 +239,8 @@ class Kill(Action):
             if target.zone is not CardZone.BOARD:
                 return ActionOutcome(success=False)
 
+            death_slot = ctx.game.board_slot(target.controller_id, target.pos)
+
             if target.has_keyword(CardKeyword.KR):
                 if (
                     isinstance(killer, Monster)
@@ -263,7 +271,7 @@ class Kill(Action):
                     ActionCall(
                         TriggerAbility(target=target, ability=Ability.DUST),
                         source=target,
-                        env={'killer': killer},
+                        env={'killer': killer, 'death_slot': death_slot},
                     )
                 )
 
@@ -1625,6 +1633,203 @@ class UpdateArtifactCounter(Action):
     def execute(self, artifact: 'Artifact', delta: int, *, ctx: ActionContext, **kwargs):
         artifact.counter = max(artifact.counter + delta, 0)
         return ActionOutcome(success=True, affected=[artifact])
+
+
+class Enchant(Action):
+    slot: Arg['BoardSlot'] = Arg(many=True)
+    enchantment: Arg['type[Enchantment]'] = Arg()
+
+    def execute(
+        self,
+        slot: BoardSlot,
+        enchantment: type[Enchantment],
+        *,
+        ctx: ActionContext,
+        **kwargs,
+    ):
+        if not isinstance(slot, BoardSlot):
+            return ActionOutcome(success=False)
+
+        results: list[ActionResult] = []
+
+        replaced_enchantment = ctx.game.enchantment_on_slot(slot)
+        replaced_snapshot = None
+
+        if replaced_enchantment is not None:
+            replaced_snapshot = replaced_enchantment.to_snapshot()
+            ctx.game.remove_enchantment(replaced_enchantment)
+
+            results.append(
+                EnchantmentRemovedResult(
+                    source_id=ctx.source.id,
+                    player_id=slot.controller_id,
+                    slot_id=slot.id,
+                    slot=slot.to_snapshot(),
+                    enchantment_id=replaced_enchantment.id,
+                    enchantment=replaced_snapshot,
+                    reason='replaced',
+                )
+            )
+
+        new_enchantment = ctx.game.create_enchantment(
+            enchantment,
+            slot,
+            creator_id=ctx.source.id,
+            creator_base_identity=ctx.source.base_identity,
+        )
+
+        results.append(
+            BoardSlotEnchantedResult(
+                source_id=ctx.source.id,
+                player_id=slot.controller_id,
+                slot_id=slot.id,
+                slot=slot.to_snapshot(),
+                enchantment_id=new_enchantment.id,
+                enchantment=new_enchantment.to_snapshot(),
+                replaced_enchantment=replaced_snapshot,
+            )
+        )
+
+        return ActionOutcome(success=True, results=results)
+
+
+class RemoveEnchantment(Action):
+    target: Arg['Enchantment | BoardSlot'] = Arg(many=True)
+    reason: Arg[EnchantmentRemovalReason] = Arg(default='removed')
+
+    def execute(
+        self,
+        target: Enchantment | BoardSlot,
+        reason: EnchantmentRemovalReason,
+        *,
+        ctx: ActionContext,
+        **kwargs,
+    ):
+        if isinstance(target, BoardSlot):
+            enchantment = ctx.game.enchantment_on_slot(target)
+            if enchantment is None:
+                return ActionOutcome(success=False)
+
+            slot = target
+
+        elif isinstance(target, Enchantment):
+            if not target.active:
+                return ActionOutcome(success=False)
+
+            slot_entity = ctx.game.entity(target.slot_id)
+            if not isinstance(slot_entity, BoardSlot):
+                return ActionOutcome(success=False)
+
+            if slot_entity.enchantment_id != target.id:
+                return ActionOutcome(success=False)
+
+            enchantment = target
+            slot = slot_entity
+
+        else:
+            return ActionOutcome(success=False)
+
+        if not ctx.game.remove_enchantment(enchantment):
+            return ActionOutcome(success=False)
+
+        return ActionOutcome(
+            success=True,
+            results=(
+                EnchantmentRemovedResult(
+                    source_id=ctx.source.id,
+                    player_id=slot.controller_id,
+                    slot_id=slot.id,
+                    slot=slot.to_snapshot(),
+                    enchantment_id=enchantment.id,
+                    enchantment=enchantment.to_snapshot(),
+                    reason=reason,
+                ),
+            ),
+        )
+
+
+
+class TransformEnchantment(Action):
+    target: Arg['Enchantment'] = Arg(many=True)
+    enchantment: Arg['type[Enchantment]'] = Arg()
+
+    def execute(
+        self,
+        target: Enchantment,
+        enchantment: type[Enchantment],
+        *,
+        ctx: ActionContext,
+        **kwargs,
+    ):
+        if not isinstance(target, Enchantment):
+            return ActionOutcome(success=False)
+
+        if not target.active:
+            return ActionOutcome(success=False)
+
+        slot_entity = ctx.game.entity(target.slot_id)
+        if not isinstance(slot_entity, BoardSlot):
+            return ActionOutcome(success=False)
+
+        if slot_entity.enchantment_id != target.id:
+            return ActionOutcome(success=False)
+
+        old_snapshot = target.to_snapshot()
+        old_slot_snapshot = slot_entity.to_snapshot()
+        ctx.game.remove_enchantment(target)
+
+        new_enchantment = ctx.game.create_enchantment(
+            enchantment,
+            slot_entity,
+            creator_id=ctx.source.id,
+            creator_base_identity=ctx.source.base_identity,
+        )
+
+        return ActionOutcome(
+            success=True,
+            results=(
+                EnchantmentRemovedResult(
+                    source_id=ctx.source.id,
+                    player_id=slot_entity.controller_id,
+                    slot_id=slot_entity.id,
+                    slot=old_slot_snapshot,
+                    enchantment_id=target.id,
+                    enchantment=old_snapshot,
+                    reason='transformed',
+                ),
+                BoardSlotEnchantedResult(
+                    source_id=ctx.source.id,
+                    player_id=slot_entity.controller_id,
+                    slot_id=slot_entity.id,
+                    slot=slot_entity.to_snapshot(),
+                    enchantment_id=new_enchantment.id,
+                    enchantment=new_enchantment.to_snapshot(),
+                    replaced_enchantment=old_snapshot,
+                ),
+            ),
+        )
+
+
+class UpdateEnchantmentCounter(Action):
+    enchantment: Arg['Enchantment'] = Arg(many=True)
+    delta: Arg[int] = Arg()
+
+    def execute(
+        self,
+        enchantment: Enchantment,
+        delta: int,
+        *,
+        ctx: ActionContext,
+        **kwargs,
+    ):
+        if not isinstance(enchantment, Enchantment):
+            return ActionOutcome(success=False)
+
+        if not enchantment.active:
+            return ActionOutcome(success=False)
+
+        enchantment.counter = max(enchantment.counter + delta, 0)
+        return ActionOutcome(success=True)
 
 
 class ScheduleEffect(Action):

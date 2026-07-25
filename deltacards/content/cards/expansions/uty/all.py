@@ -610,8 +610,11 @@ class Moray(Monster):
 
 @card(950)
 class PlagueDoctor(Monster):
-    # TODO enchantments
-    ...
+    targets = ALLY_SLOTS
+
+    magic = TARGET.enchant(
+        ENCHANTMENT_BY_NAME('the-cure')
+    )
 
 
 @card(954)

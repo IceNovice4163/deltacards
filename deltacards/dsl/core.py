@@ -428,6 +428,10 @@ class TargetSelector(ABC, ActionMethods):
             'gold',
             'turn',
             'counter',
+            'monster_id',
+            'slot_id',
+            'enchantment_id',
+            'active',
         ):
             from deltacards.dsl.values import SelectorAttrValue
             return SelectorAttrValue(self, attr=name)
