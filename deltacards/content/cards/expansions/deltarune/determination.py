@@ -40,9 +40,10 @@ class Kris(Monster):
 @card(505)
 class SoullessKris(Monster):
     magic = (
-        YOU.add_artifact(ARTIFACT_BY_NAME("Dark Fountain"))
-        >> YOU.artifact("Dark Fountain").update_artifact_counter(
-            COUNT_DISTINCT(CARDS_PLAYED(player=YOU), TEMPLATE_ID)
+        YOU.add_artifact(ARTIFACT_BY_NAME("Dark Fountain")).to(
+            YOU.artifact("Dark Fountain").update_artifact_counter(
+                COUNT_DISTINCT(CARDS_PLAYED(player=YOU), TEMPLATE_ID)
+            )
         )
     )
 
@@ -130,7 +131,7 @@ class RoaringKnight(Monster):
         >> Check((damage_not_dealt // 10) > 0).to(
             GENERATE_CARD("Black Knife", controller=OPPONENT).to_deck(
                 controller=OPPONENT,
-                pos=RANGE(1, COUNT(DECK) + 1) >> RANDOM()
+                pos=RANGE(1, COUNT(DECK) + 1) >> RANDOM(1)
             ) * (damage_not_dealt // 10)
         )
     )

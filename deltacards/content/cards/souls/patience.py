@@ -140,10 +140,15 @@ class TrueSelf(Spell):
 
 @card(552)
 class ChangeOfWinds(Spell):
-    magic = YOU.choose(DECK[:2]).to(
-        YOU.draw(CHOICE_SELECTED)
-        >> CHOICE_NOT_SELECTED.to_deck(pos='bottom')
-        >> (CHOICE_SELECTED | CHOICE_NOT_SELECTED).buff(cost=-1)
+    magic = Check(
+        COUNT(DECK) > 0
+    ).to(
+        YOU.choose(DECK[:2]).to(
+            YOU.draw(CHOICE_SELECTED)
+            >> CHOICE_NOT_SELECTED.to_deck(pos='bottom')
+            >> (CHOICE_SELECTED | CHOICE_NOT_SELECTED).buff(cost=-1)
+        ),
+        else_=YOU.draw_next()  # player should take fatigue damage if there are no cards in deck (card-specific ruling)
     )
 
 

@@ -11,7 +11,7 @@ class Worsening(Spell):
     )
 
     delay = Check(
-        SELF.is_generated & TARGET.dead
+        (~SELF.is_generated) & TARGET.dead
     ).to(
         GENERATE_CARD("Worsening").to_hand()
     )

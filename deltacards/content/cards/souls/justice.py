@@ -86,12 +86,13 @@ class MultiShot(Spell):
     magic = SELF.schedule_delay_effect()
 
     delay = (
-        YOU.add_artifact(ARTIFACT_BY_NAME("True Justice"))
-        >> While(
-            _artifact.counter > 0,
-            _artifact.trigger_ability(Ability.TURN_END)
+        Check(YOU & HAS_ARTIFACT("True Justice")).to(
+            While(
+                _artifact.counter > 0,
+                _artifact.trigger_ability(Ability.TURN_END)
+            )
         )
-        >> _artifact.update_artifact_counter(+6)
+        >> YOU.add_artifact(ARTIFACT_BY_NAME("True Justice"))
     )
 
 

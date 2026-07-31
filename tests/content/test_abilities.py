@@ -350,3 +350,40 @@ def test_zootsusie_attack():
     assert rig.p1.hand[-1].template.name == "Recruitment"
     assert [(c.template.id if c else None) for c in rig.p2.board] == [1, 1, None, 1]
     assert [(c.hp if c else None) for c in rig.p2.board] == [4, 1, None, 1]
+
+
+@synthetic_card(
+    90,
+    cost=1,
+)
+class Contamination(Spell):
+    kill_targets: Var[TargetSelector] = Var(TargetSelector)
+
+    magic = (
+        SetVar(
+            var=kill_targets,
+            value=(ENEMY_MONSTERS & DAMAGED) >> RANDOM(2)
+        )
+        >> kill_targets.add_keyword(KR)
+        >> kill_targets.kill()
+    )
+
+
+def test_contamination():
+    rig = TestRig.create(p1_deck=[1, 1], p2_deck=[1, 90])
+
+    for _ in range(2):
+        dummy = rig.p1.hand[0]
+        rig.p1.play_monster(dummy)
+        dummy.hp_missing = 1
+
+    rig.p1.end_turn()
+
+    kr_buff_target = rig.p2.hand[0]
+    rig.p2.play_monster(kr_buff_target)
+    rig.p2.play_spell(rig.p2.hand[0])
+
+    assert sum(1 for m in rig.p1.board if m) == 0
+
+    assert kr_buff_target.buffs.attack == 2
+    assert kr_buff_target.buffs.max_hp == 2

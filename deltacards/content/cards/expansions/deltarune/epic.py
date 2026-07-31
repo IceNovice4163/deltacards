@@ -71,7 +71,8 @@ class FatherAlvin(Monster):
             & NON_DT
         ) >> RANDOM(3)
     ).to(
-        CHOICE_SELECTED.to_hand()
+        (CHOICE_SELECTED >> COPY()).to_hand()
+        >> CHOICE_SELECTED.erase()
     )
 
 

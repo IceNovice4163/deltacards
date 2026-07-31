@@ -11,6 +11,7 @@ from deltacards.actions.base import (
 from deltacards.actions.results import *
 from deltacards.dsl.selectors import ENEMY_MONSTERS
 from deltacards.dsl.transforms import RANDOM
+from deltacards.dsl.values import HP
 from deltacards.engine.modifiers import HealQuery
 from deltacards.model.cards import (
     Card,
@@ -249,7 +250,7 @@ class Kill(Action):
                 ):
                     buff_target = killer
                 else:
-                    buff_target = RANDOM(ENEMY_MONSTERS)
+                    buff_target = (ENEMY_MONSTERS & (HP > 0)) >> RANDOM(1)
 
                 action_calls.append(
                     ActionCall(Buff(target=buff_target, attack=1, hp=1), source=target)
@@ -436,21 +437,25 @@ class DrawNext(Action):
     from_pos: Arg[str] = Arg(default='top')
 
     def execute(self, player: 'Player', reason: str, from_pos: str, *, ctx: ActionContext, **kwargs):
-        if len(player.deck) > 0:
-            if from_pos == 'top':
-                card = player.deck.cards[0]
-            elif from_pos == 'bottom':
-                card = player.deck.cards[-1]
-            else:
-                raise ValueError(f"`from_pos` got invalid value: {from_pos}")
+        if from_pos == 'top':
+            if len(player.deck) == 0:
+                return ActionOutcome(
+                    success=False,
+                    action_calls=[ActionCall(TakeFatigueDamage(player=player), source=player)],
+                )
 
-            return perform_card_draw(player, card, reason, ctx=ctx)
+            card = player.deck.cards[0]
+
+        elif from_pos == 'bottom':
+            if len(player.deck) == 0:
+                return ActionOutcome(success=False)
+
+            card = player.deck.cards[-1]
 
         else:
-            return ActionOutcome(
-                success=False,
-                action_calls=[ActionCall(TakeFatigueDamage(player=player), source=player)],
-            )
+            raise ValueError(f"`from_pos` got invalid value: {from_pos}")
+
+        return perform_card_draw(player, card, reason, ctx=ctx)
 
 
 class Overdraw(Action):
@@ -860,6 +865,9 @@ class Summon(Action):
         if not isinstance(card, Monster):
             return ActionOutcome(success=False)
 
+        if card.zone not in CARD_EDITABLE_ZONES:
+            return ActionOutcome(success=False)
+
         if len(controller.board) == controller.board.MAX_CARDS:
             return ActionOutcome(success=False)
 
@@ -1121,6 +1129,9 @@ class Cast(Action):
         **kwargs
     ):
         if not isinstance(card, Card):
+            return ActionOutcome(success=False)
+
+        if card.zone not in CARD_EDITABLE_ZONES:
             return ActionOutcome(success=False)
 
         # If a spell is cast by an effect, any choices caused by this `Cast` should be made randomly.
@@ -1930,6 +1941,11 @@ class PlayerEndTurnAction(Action):
                     run_player_end_turn_window,
                     source=player,
                     kwargs={'player': player},
+                ),
+                ActionCall(
+                    PlayerStartTurnAction(player=player.opponent),
+                    source=player.opponent,
+                    kwargs={'player': player.opponent},
                 )
             ],
         )

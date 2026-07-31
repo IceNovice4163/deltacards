@@ -168,4 +168,3 @@ def run_player_end_turn_window(ctx: ActionContext, player: Player):
 
     # Pass the turn
     yield AdvanceTurn(player=player)
-    yield PlayerStartTurnAction(player=player.opponent)

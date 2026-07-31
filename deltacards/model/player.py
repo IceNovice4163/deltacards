@@ -23,6 +23,8 @@ class Player(Entity):
     ):
         super().__init__(player_id)
 
+        self.id: PlayerId = player_id
+
         self.starting_deck_card_ids = deck
         self.starting_soul_id = soul_id.lower()
         self.starting_artifact_ids = artifact_ids

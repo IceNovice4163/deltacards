@@ -26,7 +26,7 @@ class ClubChaos(Spell):
     magic = For(
         7,
         effect=Cast(
-            card=DISCOVER(IS_SPELL, COST <= 4),
+            card=DISCOVER(IS_SPELL, NON_TOKEN, COST <= 4),
             controller=YOU,
             effect_target='random'
         )

@@ -106,7 +106,7 @@ class HyperGoner(Spell):
 
 @card(129)
 class Knife(Spell):
-    targets = ALLY_MONSTERS | ENEMY_MONSTERS
+    targets = ENEMY_MONSTERS
 
     kill_result: Var[StepResult] = Var(StepResult)
 

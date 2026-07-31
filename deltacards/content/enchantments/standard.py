@@ -14,6 +14,7 @@ def _lose_counter_and_expire_at_zero():
 class BlueBones(Enchantment):
     name = "Blue Bones"
 
+    @on_event(AttackResolvedResult)
     def on_attack_resolved(self, res: AttackResolvedResult, game, **kwargs):
         if res.attacker.slot_id != self.slot_id:
             return None
