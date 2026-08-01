@@ -1,6 +1,13 @@
 from typing import Any, TYPE_CHECKING
 
-from deltacards.model.enums import Ability, CardKeyword, CardStatusId, CardZone, DamageKind
+from deltacards.model.enums import (
+    Ability,
+    CardKeyword,
+    CardStatusId,
+    CardZone,
+    DamageKind,
+    KillCause,
+)
 
 if TYPE_CHECKING:
     from deltacards.actions.standard import (
@@ -87,6 +94,7 @@ class ActionMethods:
         *,
         killer: Any = None,
         skip_check_death_prevented: bool = False,
+        cause: KillCause = KillCause.DESTROY_EFFECT,
     ) -> 'Kill':
         from deltacards.actions.standard import Kill
         from deltacards.dsl.selectors import SELF
@@ -94,6 +102,7 @@ class ActionMethods:
             target=self._action_target,
             killer=SELF if killer is None else killer,
             skip_check_death_prevented=skip_check_death_prevented,
+            cause=cause,
         )
 
     def buff(

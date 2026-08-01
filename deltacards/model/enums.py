@@ -38,6 +38,7 @@ class CardKeyword(IntFlag):
     SILENCED = 1 << 9
     WANTED = 1 << 10
     DARKSPAWN = 1 << 11
+    FLOWERY_POWER = 1 << 12
 
 
 class CardStatusId(Enum):
@@ -84,6 +85,13 @@ class DamageKind(Enum):
     SPELL = 'spell'
     ABILITY = 'ability'
     FATIGUE = 'fatigue'
+
+
+class KillCause(Enum):
+    COMBAT = 'combat'
+    DAMAGE_EFFECT = 'damage_effect'
+    DESTROY_EFFECT = 'destroy_effect'
+    OTHER = 'other'
 
 
 class Expansion(Enum):

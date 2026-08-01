@@ -25,6 +25,7 @@ KEYWORD_MAP = {
     'invulnerable': CardKeyword.INVULNERABLE.name,
     'wanted': CardKeyword.WANTED.name,
     'darkspawn': CardKeyword.DARKSPAWN.name,
+    'flowerypower': CardKeyword.FLOWERY_POWER.name,
 }
 
 STATUS_MAP = {
@@ -58,7 +59,7 @@ def convert_card(d: dict[str, Any], abilities_by_card: dict[int, set[str]]) -> d
     active_abilities = set()
 
     for status in d['statuses']:
-        status_name = status['name']
+        status_name = status['name'].lower()
 
         if status_name in KEYWORD_MAP:
             keywords.add(KEYWORD_MAP[status_name])

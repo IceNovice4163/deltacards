@@ -14,6 +14,11 @@ from deltacards.model.enums import (
     PlayerId,
     Tribe,
 )
+from deltacards.model.negative_effects import (
+    NEGATIVE_KEYWORDS,
+    NEGATIVE_STATUS_IDS,
+    card_has_negative_effects,
+)
 from deltacards.model.snapshots import CardSnapshot, MonsterSnapshot, SpellSnapshot
 from deltacards.model.templates import CardTemplate, MonsterTemplate
 from deltacards.model.types import BaseIdentity
@@ -229,6 +234,32 @@ class Card(Entity, Generic[TTemplate]):
         self.statuses.pop(status_id, None)
         self._invalidate_rules()
 
+    def has_negative_effects(self) -> bool:
+        return card_has_negative_effects(
+            cost_buff=self.buffs.cost,
+            attack_buff=self.buffs.attack,
+            max_hp_buff=self.buffs.max_hp,
+            keywords=self.keywords,
+            statuses=self.statuses,
+        )
+
+    def remove_negative_effects(self) -> None:
+        if self.buffs.cost > 0:
+            self.buffs.cost = 0
+
+        if self.buffs.attack < 0:
+            self.buffs.attack = 0
+
+        if self.buffs.max_hp < 0:
+            self.buffs.max_hp = 0
+
+        self.keywords &= ~NEGATIVE_KEYWORDS
+
+        for status_id in NEGATIVE_STATUS_IDS:
+            self.statuses.pop(status_id, None)
+
+        self._invalidate_rules()
+
     def toggle_ability(self, ability: CardToggleableAbility, enabled: bool) -> None:
         if enabled:
             self.active_abilities.add(ability)
@@ -263,7 +294,7 @@ class Card(Entity, Generic[TTemplate]):
             template=self.template,
             controller_id=self.controller_id,
             base=replace(self.base),
-            keywords=self.keywords,
+            keywords=self.keywords & ~CardKeyword.HASTE,  # exact copies don't copy Haste
             statuses=self.statuses.copy(),
             active_abilities=self.active_abilities.copy(),
             buffs=replace(self.buffs),
@@ -471,29 +502,6 @@ class Monster(Card[MonsterTemplate]):
 
         self._invalidate_rules()
         return True
-
-    def remove_negative_effects(self) -> None:
-        if self.buffs.cost > 0:
-            self.buffs.cost = 0
-        if self.buffs.attack < 0:
-            self.buffs.attack = 0
-        if self.buffs.max_hp < 0:
-            self.buffs.max_hp = 0
-
-        for keyword in (
-            CardKeyword.KR,
-            CardKeyword.DISARMED,
-            CardKeyword.SILENCED,
-            CardKeyword.WANTED,
-        ):
-            self.keywords &= ~keyword
-
-        for status_id in (
-            CardStatusId.PARALYZED,
-        ):
-            self.statuses.pop(status_id, None)
-
-        self._invalidate_rules()
 
     def set_base_stats(self, cost: int | None = None, attack: int | None = None, hp: int | None = None) -> None:
         self.base = BaseStats(

@@ -36,6 +36,7 @@ from deltacards.model.enums import (
     CardKeyword,
     CardStatusId,
     DamageKind,
+    KillCause,
     PlayerId,
 )
 from deltacards.model.player import Player
@@ -903,6 +904,9 @@ class Game:
         if condition is None:
             return False
 
+        if card.has_keyword(CardKeyword.FLOWERY_POWER):
+            return True
+
         return bool(
             evaluate_expr(
                 condition,
@@ -1391,7 +1395,13 @@ class Game:
     # Replacement effects
     # --------------------
 
-    def check_death_prevented(self, target: Monster | Player, killer: Entity) -> tuple[bool, list[ActionCall]]:
+    def check_death_prevented(
+        self,
+        target: Monster | Player,
+        killer: Entity,
+        *,
+        cause: KillCause = KillCause.OTHER,
+    ) -> tuple[bool, list[ActionCall]]:
         death_prevented = False
         extra_actions = []
 
@@ -1411,7 +1421,12 @@ class Game:
         if not death_prevented:
             extra_actions.append(
                 ActionCall(
-                    Kill(target=target, killer=killer, skip_check_death_prevented=True),
+                    Kill(
+                        target=target,
+                        killer=killer,
+                        skip_check_death_prevented=True,
+                        cause=cause,
+                    ),
                     source=killer,
                 )
             )
@@ -1492,7 +1507,15 @@ class Game:
             target.hp = target.hp - damage
 
             if target.hp <= 0:
-                death_prevented, extra_actions = self.check_death_prevented(target, source)
+                death_prevented, extra_actions = self.check_death_prevented(
+                    target,
+                    source,
+                    cause=(
+                        KillCause.COMBAT
+                        if kind is DamageKind.COMBAT
+                        else KillCause.DAMAGE_EFFECT
+                    ),
+                )
             else:
                 death_prevented = False
                 extra_actions = []
@@ -1535,7 +1558,15 @@ class Game:
         excess_damage = max(damage - hp_before, 0)
 
         if target.hp <= 0:
-            death_prevented, extra_actions = self.check_death_prevented(target, source)
+            death_prevented, extra_actions = self.check_death_prevented(
+                target,
+                source,
+                cause=(
+                    KillCause.COMBAT
+                    if kind is DamageKind.COMBAT
+                    else KillCause.DAMAGE_EFFECT
+                ),
+            )
         else:
             death_prevented = False
             extra_actions = []

@@ -25,6 +25,7 @@ from deltacards.model.enums import (
     CardStatusId,
     CardZone,
     DamageKind,
+    KillCause,
     Expansion,
     PlayerId,
     Tribe,
@@ -57,15 +58,26 @@ from deltacards.dsl.history import (
     ABILITY_TRIGGERS,
     AMOUNT,
     ANOTHER_SOUL_THAN,
+    ATTACKER_ID,
+    ATTACKS_DECLARED,
+    ATTACKS_RESOLVED,
     CARD_ID,
     CARD_SOUL,
+    CARDS_DRAWN,
     CARDS_PLAYED,
+    DEFENDER_ID,
     GOLD_SPENT,
+    HAS_NEED_CONDITION,
+    HEALED_AMOUNT,
+    HEALING_DONE,
     IN_HISTORY,
+    IS_COMBAT_KILL,
+    KILL_CAUSE,
     KILLED_BY_MONSTER,
     LAST_TURN_OF,
     MONSTER_ID,
     MONSTERS_DIED,
+    NEED_FULFILLED,
     OF_SOUL,
     PLAYER_SOUL,
     REASON,
@@ -82,6 +94,7 @@ from deltacards.dsl.history import (
     THIS_TURN,
 )
 from deltacards.dsl.macros import (
+    AddToHandOrDeck,
     DrawUpTo,
     FillBoard,
     FillHand,
@@ -95,6 +108,7 @@ from deltacards.dsl.predicates import (
     DAMAGED,
     DEAD,
     DT,
+    HAS_NEGATIVE_EFFECTS,
     EMPTY_SLOT,
     ENCHANTED_SLOT,
     EXPANSION,
@@ -137,6 +151,7 @@ from deltacards.dsl.selectors import (
     DEATH_SLOT,
     DECK,
     DECK_OF,
+    DEFENDER,
     DUSTPILE,
     DUSTPILE_OF,
     ENCHANTMENTS_OF,
@@ -227,6 +242,7 @@ INVULNERABLE = CardKeyword.INVULNERABLE
 SILENCED = CardKeyword.SILENCED
 WANTED = CardKeyword.WANTED
 DARKSPAWN = CardKeyword.DARKSPAWN
+FLOWERY_POWER = CardKeyword.FLOWERY_POWER
 
 # Card statuses
 PARALYZED = CardStatusId.PARALYZED
@@ -262,7 +278,7 @@ __all__ = (
 
     # Card keywords
     'CHARGE', 'HASTE', 'TAUNT', 'KR', 'CANDY', 'ARMOR', 'TRANSPARENCY', 'DISARMED', 'INVULNERABLE',
-    'SILENCED', 'WANTED', 'DARKSPAWN',
+    'SILENCED', 'WANTED', 'DARKSPAWN', 'FLOWERY_POWER',
 
     # Card statuses
     'PARALYZED', 'DODGE', 'LOOP',
@@ -295,7 +311,7 @@ __all__ = (
     'UNIQUE_VALUES',
 
     # Selectors
-    'SELF', 'TARGET', 'KILLER', 'ATTACKER', 'LOOP_COPY', 'TRIGGER_CARD', 'DEATH_SLOT',
+    'SELF', 'TARGET', 'KILLER', 'ATTACKER', 'DEFENDER', 'LOOP_COPY', 'TRIGGER_CARD', 'DEATH_SLOT',
     'YOU', 'CONTROLLER', 'OPPONENT', 'TURN_PLAYER', 'ALL_PLAYERS',
 
     'RESOLVE_ENTITY',
@@ -343,6 +359,7 @@ __all__ = (
     'IS_SPELL',
     'DAMAGED',
     'DEAD',
+    'HAS_NEGATIVE_EFFECTS',
     'HAS_ABILITY',
     'HAS_KEYWORD',
     'HAS_STATUS',
@@ -391,15 +408,26 @@ __all__ = (
     'ABILITY_TRIGGERS',
     'AMOUNT',
     'ANOTHER_SOUL_THAN',
+    'ATTACKER_ID',
+    'ATTACKS_DECLARED',
+    'ATTACKS_RESOLVED',
     'CARD_ID',
     'CARD_SOUL',
+    'CARDS_DRAWN',
     'CARDS_PLAYED',
+    'DEFENDER_ID',
     'GOLD_SPENT',
+    'HAS_NEED_CONDITION',
+    'HEALED_AMOUNT',
+    'HEALING_DONE',
     'IN_HISTORY',
+    'IS_COMBAT_KILL',
+    'KILL_CAUSE',
     'KILLED_BY_MONSTER',
     'LAST_TURN_OF',
     'MONSTER_ID',
     'MONSTERS_DIED',
+    'NEED_FULFILLED',
     'OF_SOUL',
     'PLAYER_SOUL',
     'REASON',
@@ -422,6 +450,7 @@ __all__ = (
     'DrawUpTo',
     'FillBoard',
     'FillHand',
+    'AddToHandOrDeck',
     'OncePerTurn',
 
     'NEXT_LOST_SOUL',
@@ -457,6 +486,7 @@ __all__ = (
     'CardStatusId',
     'CardZone',
     'DamageKind',
+    'KillCause',
     'Expansion',
     'PlayerId',
     'Tribe',

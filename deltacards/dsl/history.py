@@ -3,12 +3,16 @@ from dataclasses import dataclass
 from typing import Any, Callable, TYPE_CHECKING
 
 from deltacards.actions.results import (
+    AttackDeclaredResult,
+    AttackResolvedResult,
     AbilityTriggeredResult,
     ActionResult,
+    CardDrawnResult,
     CardPlayedResult,
-    SpellCastResult,
-    MonsterKilledResult,
+    EntityHealedResult,
     GoldSpentResult,
+    MonsterKilledResult,
+    SpellCastResult,
 )
 from deltacards.dsl.aggregates import SUM
 from deltacards.dsl.core import Predicate, TargetSelector, TargetingError, ValueExpr, to_value
@@ -27,7 +31,7 @@ from deltacards.dsl.inspection import (
 from deltacards.dsl.selectors import YOU
 from deltacards.dsl.values import TEMPLATE_ID
 from deltacards.model.entity import Entity
-from deltacards.model.enums import Ability, CardType, PlayerId
+from deltacards.model.enums import Ability, CardType, KillCause, PlayerId
 from deltacards.model.player import Player
 from deltacards.model.types import GoldSpendReason
 
@@ -370,9 +374,53 @@ def CARDS_PLAYED(player: Any | None = YOU, *, scope: HistoryScope = THIS_GAME) -
     return HistorySelector(CardPlayedResult, player=player, scope=scope)
 
 
+def CARDS_DRAWN(player: Any | None = YOU, *, scope: HistoryScope = THIS_GAME) -> HistorySelector:
+    return HistorySelector(CardDrawnResult, player=player, scope=scope)
+
+
 def SPELLS_CAST(player: Any | None = YOU, *, scope: HistoryScope = THIS_GAME) -> HistorySelector:
     # Explicit `is_played == True` check (spells count as cast only if played)
     return HistorySelector(SpellCastResult, player=player, scope=scope) & (HistoryAttrValue('is_played') == True)
+
+
+def ATTACKS_DECLARED(
+    *,
+    attacker_controller: Any | None = YOU,
+    scope: HistoryScope = THIS_GAME,
+) -> HistorySelector:
+    return HistorySelector(
+        AttackDeclaredResult,
+        controller=attacker_controller,
+        scope=scope,
+    )
+
+
+def ATTACKS_RESOLVED(
+    *,
+    attacker_controller: Any | None = YOU,
+    scope: HistoryScope = THIS_GAME,
+) -> HistorySelector:
+    return HistorySelector(
+        AttackResolvedResult,
+        controller=attacker_controller,
+        scope=scope,
+    )
+
+
+def HEALING_DONE(
+    *,
+    controller: Any | None = YOU,
+    scope: HistoryScope = THIS_GAME,
+) -> HistorySelector:
+    """
+    Select healing results whose healed target is the selected Player or one
+    of that Player's controlled Monsters.
+    """
+    return HistorySelector(
+        EntityHealedResult,
+        controller=controller,
+        scope=scope,
+    )
 
 
 def GOLD_SPENT(
@@ -447,8 +495,17 @@ CARD_ID = HistoryAttrValue('card_id')
 MONSTER_ID = HistoryAttrValue('monster_id')
 
 AMOUNT = HistoryAttrValue('amount')
+HEALED_AMOUNT = HistoryAttrValue('amount')
 
 REASON = HistoryAttrValue('reason')
+
+ATTACKER_ID = HistoryAttrValue('attacker_id')
+DEFENDER_ID = HistoryAttrValue('defender_id')
+
+KILL_CAUSE = HistoryAttrValue('cause')
+
+HAS_NEED_CONDITION = HistoryAttrValue('has_need_condition')
+NEED_FULFILLED = HistoryAttrValue('need_fulfilled')
 
 TEMPLATE_NAME = HistoryAttrValue('template_name')
 
@@ -523,6 +580,19 @@ def IN_HISTORY(
         candidate_key=TEMPLATE_ID if candidate_key is None else to_value(candidate_key),
         history_key=TEMPLATE_ID if history_key is None else to_value(history_key),
     )
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class IsCombatKillPredicate(Predicate):
+    def test(self, entity: Any, ctx: 'ActionContext', **kwargs) -> bool:
+        cause = attr_of(entity, 'cause', default=None)
+        return cause is KillCause.COMBAT
+
+    def __repr__(self) -> str:
+        return "IS_COMBAT_KILL"
+
+
+IS_COMBAT_KILL = IsCombatKillPredicate()
 
 
 @dataclass(frozen=True, slots=True, eq=False)

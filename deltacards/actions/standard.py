@@ -26,7 +26,9 @@ from deltacards.model.enums import (
     Ability,
     CardKeyword,
     CardStatusId,
-    CardToggleableAbility, DamageKind,
+    CardToggleableAbility,
+    DamageKind,
+    KillCause,
     Tribe,
 )
 from deltacards.model.player import Player
@@ -209,12 +211,14 @@ class Kill(Action):
     target: Arg['Monster | Player'] = Arg(many=True)
     killer: Arg['Entity | None'] = Arg(default=None)
     skip_check_death_prevented: Arg[bool] = Arg(default=False)
+    cause: Arg[KillCause] = Arg(default=KillCause.DESTROY_EFFECT)
 
     def execute(
         self,
         target: 'Monster | Player',
         killer: 'Entity | None',
         skip_check_death_prevented: bool,
+        cause: KillCause,
         *,
         ctx: ActionContext,
         **kwargs,
@@ -226,7 +230,11 @@ class Kill(Action):
             killer = ctx.source
 
         if not skip_check_death_prevented:
-            death_prevented, extra_actions = ctx.game.check_death_prevented(target, killer)
+            death_prevented, extra_actions = ctx.game.check_death_prevented(
+                target,
+                killer,
+                cause=cause,
+            )
             if death_prevented:
                 return ActionOutcome(
                     success=False,
@@ -290,6 +298,7 @@ class Kill(Action):
                     monster=target.to_snapshot(),
                     killer_id=killer.id,
                     killer=killer.to_snapshot(),
+                    cause=cause,
                 )
             )
 
@@ -364,7 +373,16 @@ class Buff(Action):
         if isinstance(target, Monster):
             target.buff(cost, attack, hp, min_cost, min_attack, min_hp)
             if target.hp <= 0 and target.zone is CardZone.BOARD:
-                action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
+                action_calls.append(
+                    ActionCall(
+                        Kill(
+                            target=target,
+                            killer=ctx.source,
+                            cause=KillCause.OTHER,
+                        ),
+                        source=ctx.source,
+                    )
+                )
 
         elif isinstance(target, Spell):
             target.buff(cost)
@@ -374,7 +392,16 @@ class Buff(Action):
             target.buff(hp=hp)
 
             if target.hp <= 0:
-                action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
+                action_calls.append(
+                    ActionCall(
+                        Kill(
+                            target=target,
+                            killer=ctx.source,
+                            cause=KillCause.OTHER,
+                        ),
+                        source=ctx.source,
+                    )
+                )
 
         return ActionOutcome(
             success=True,
@@ -657,7 +684,16 @@ class SetStats(Action):
             target.buff(hp=hp - (target.base.hp + target.buffs.max_hp))
 
             if target.hp <= 0 and target.zone is CardZone.BOARD:
-                action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
+                action_calls.append(
+                    ActionCall(
+                        Kill(
+                            target=target,
+                            killer=ctx.source,
+                            cause=KillCause.OTHER,
+                        ),
+                        source=ctx.source,
+                    )
+                )
 
         if cost is not None:
             target.buff(cost=cost - (target.base.cost + target.buffs.cost))
@@ -697,7 +733,16 @@ class SetBaseStats(Action):
             target.set_base_stats(cost=cost, attack=attack, hp=hp)
 
             if (hp is not None) and (target.hp <= 0) and (target.zone is CardZone.BOARD):
-                action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
+                action_calls.append(
+                    ActionCall(
+                        Kill(
+                            target=target,
+                            killer=ctx.source,
+                            cause=KillCause.OTHER,
+                        ),
+                        source=ctx.source,
+                    )
+                )
 
         else:
             target.set_base_stats(cost=cost)
@@ -723,7 +768,16 @@ class SwapStats(Action):
         target.buff(attack=target.hp - target.attack, hp=target.attack - target.hp)
 
         if target.hp <= 0 and target.zone is CardZone.BOARD:
-            action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
+            action_calls.append(
+                ActionCall(
+                    Kill(
+                        target=target,
+                        killer=ctx.source,
+                        cause=KillCause.OTHER,
+                    ),
+                    source=ctx.source,
+                )
+            )
 
         return ActionOutcome(
             success=True,
@@ -749,7 +803,16 @@ class HalveStats(Action):
         target.buff(attack=-round_func(target.attack / 2), hp=-round_func(target.hp / 2))
 
         if target.hp <= 0 and target.zone is CardZone.BOARD:
-            action_calls.append(ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source))
+            action_calls.append(
+                ActionCall(
+                    Kill(
+                        target=target,
+                        killer=ctx.source,
+                        cause=KillCause.OTHER,
+                    ),
+                    source=ctx.source,
+                )
+            )
 
         return ActionOutcome(
             success=True,
@@ -794,7 +857,16 @@ class Move(Action):
                 if target.zone is CardZone.BOARD:
                     return ActionOutcome(
                         success=True,
-                        action_calls=[ActionCall(Kill(target=target, killer=ctx.source), source=ctx.source)],
+                        action_calls=[
+                            ActionCall(
+                                Kill(
+                                    target=target,
+                                    killer=ctx.source,
+                                    cause=KillCause.OTHER,
+                                ),
+                                source=ctx.source,
+                            )
+                        ],
                     )
                 elif target.zone is CardZone.DECK:
                     return ActionOutcome(
@@ -849,6 +921,8 @@ class Summon(Action):
     attack: Arg[int | None] = Arg(default=None)
     hp: Arg[int | None] = Arg(default=None)
     is_played: Arg[bool] = Arg(default=False)
+    has_need_condition: Arg[bool] = Arg(default=False)
+    need_fulfilled: Arg[bool] = Arg(default=False)
 
     def execute(
         self,
@@ -858,6 +932,8 @@ class Summon(Action):
         attack: int | None,
         hp: int | None,
         is_played: bool,
+        has_need_condition: bool,
+        need_fulfilled: bool,
         *,
         ctx: ActionContext,
         **kwargs,
@@ -888,6 +964,8 @@ class Summon(Action):
                     player_id=controller.id,
                     card_id=card.id,
                     card=card.to_snapshot(),
+                    has_need_condition=has_need_condition,
+                    need_fulfilled=need_fulfilled,
                 ),
             ]
 
@@ -980,6 +1058,15 @@ class Play(Action):
                 if target not in options:
                     return ActionOutcome(success=False)
 
+        # Need is a play-time condition. It must be evaluated while the card
+        # is still in hand and then remain fixed for this play.
+        has_need_condition = card.has_need_condition()
+        need_fulfilled = (
+            ctx.game.card_need_fulfilled(card)
+            if has_need_condition
+            else False
+        )
+
         spend_gold_calls = [
             ActionCall(
                 SpendGold(
@@ -1033,15 +1120,16 @@ class Play(Action):
 
             if not skip_magic:
                 # Magic: The card will trigger its effect when played.
-                effect = card.get_ability(Ability.MAGIC)
-                if effect is not None:
-                    magic_calls.append(
-                        ActionCall(
-                            TriggerAbility(target=card, ability=Ability.MAGIC),
-                            source=card,
-                            env={'target': target, 'loop_copy': loop_copy, 'synergy_triggered': synergy_triggered},
+                if (not has_need_condition) or need_fulfilled:
+                    effect = card.get_ability(Ability.MAGIC)
+                    if effect is not None:
+                        magic_calls.append(
+                            ActionCall(
+                                TriggerAbility(target=card, ability=Ability.MAGIC),
+                                source=card,
+                                env={'target': target, 'loop_copy': loop_copy, 'synergy_triggered': synergy_triggered},
+                            )
                         )
-                    )
 
                 if synergy_triggered:
                     synergy_effect = card.get_ability(Ability.SYNERGY)
@@ -1068,6 +1156,8 @@ class Play(Action):
                             controller=player,
                             pos=pos,
                             is_played=True,
+                            has_need_condition=has_need_condition,
+                            need_fulfilled=need_fulfilled,
                         ),
                         source=player,
                         env={'magic_effect_target': target},  # used only for result logging
@@ -1103,6 +1193,8 @@ class Play(Action):
                             controller=player,
                             effect_target=target,
                             is_played=True,
+                            has_need_condition=has_need_condition,
+                            need_fulfilled=need_fulfilled,
                         ),
                         source=player,
                         env={'loop_copy': loop_copy},
@@ -1117,6 +1209,8 @@ class Cast(Action):
     controller: Arg['Player'] = Arg()
     effect_target: Arg[Entity | Literal['random'] | None] = Arg(default=None)
     is_played: Arg[bool] = Arg(default=False)
+    has_need_condition: Arg[bool] = Arg(default=False)
+    need_fulfilled: Arg[bool] = Arg(default=False)
 
     def execute(
         self,
@@ -1124,6 +1218,8 @@ class Cast(Action):
         controller: 'Player',
         effect_target: Entity | Literal['random'] | None,
         is_played: bool,
+        has_need_condition: bool,
+        need_fulfilled: bool,
         *,
         ctx: ActionContext,
         **kwargs
@@ -1157,7 +1253,12 @@ class Cast(Action):
         ctx.game.move_card(card, controller.id, CardZone.STACK)
 
         magic_calls = []
-        skip_magic = (card.targets is not None) and (effect_target is None)
+        need_blocks_magic = (
+            is_played
+            and has_need_condition
+            and not need_fulfilled
+        )
+        skip_magic = need_blocks_magic or ((card.targets is not None) and (effect_target is None))
         if not skip_magic:
             effect = card.get_ability(Ability.MAGIC)
             if effect is not None:
@@ -1177,6 +1278,8 @@ class Cast(Action):
                     player_id=controller.id,
                     card_id=card.id,
                     card=card.to_snapshot(),
+                    has_need_condition=has_need_condition,
+                    need_fulfilled=need_fulfilled,
                 ),
             ]
 
@@ -1215,10 +1318,6 @@ class TriggerAbility(Action):
     ability: Arg[Ability] = Arg()
 
     def execute(self, target: Entity, ability: Ability, *, ctx: ActionContext, **kwargs):
-        if ability is Ability.MAGIC and isinstance(target, Card):
-            if target.has_need_condition() and not ctx.game.card_need_fulfilled(target):
-                return ActionOutcome(success=True)
-
         effect = target.get_ability(ability)
         if effect is None:
             return ActionOutcome(success=True)
@@ -1375,7 +1474,7 @@ class Attack(Action):
                 ActionCall(
                     TriggerAbility(target=source, ability=Ability.SUPPORT),
                     source=source,
-                    env={'attacker': attacker},
+                    env={'attacker': attacker, 'defender': defender},
                 )
             )
 

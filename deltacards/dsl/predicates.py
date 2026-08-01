@@ -15,7 +15,7 @@ from deltacards.dsl.inspection import (
     tribes_of,
 )
 from deltacards.dsl.values import RARITY
-from deltacards.model.cards import Card
+from deltacards.model.cards import Card, CardBuffs
 from deltacards.model.enchantments import ENCHANTMENTS
 from deltacards.model.enums import (
     Ability,
@@ -26,6 +26,7 @@ from deltacards.model.enums import (
     Expansion,
     Tribe,
 )
+from deltacards.model.negative_effects import card_has_negative_effects
 from deltacards.model.slots import BoardSlot
 from deltacards.model.templates import CardTemplate
 
@@ -55,6 +56,28 @@ class DamagedPredicate(Predicate):
 
     def __repr__(self) -> str:
         return "DAMAGED"
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class HasNegativeEffectsPredicate(Predicate):
+    def test(self, entity: 'Entity', ctx: 'ActionContext', **kwargs) -> bool:
+        buffs = attr_of(entity, 'buffs', default=None)
+        keywords = attr_of(entity, 'keywords', default=None)
+        statuses = attr_of(entity, 'statuses', default=None)
+
+        if (buffs is None) or (keywords is None) or (statuses is None):
+            return False
+
+        return card_has_negative_effects(
+            cost_buff=buffs.cost,
+            attack_buff=buffs.attack,
+            max_hp_buff=buffs.max_hp,
+            keywords=keywords,
+            statuses=statuses,
+        )
+
+    def __repr__(self) -> str:
+        return "HAS_NEGATIVE_EFFECTS"
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -222,6 +245,7 @@ IS_SPELL = IsTypePredicate(CardType.SPELL)
 
 DAMAGED = DamagedPredicate()
 DEAD = DeadPredicate()
+HAS_NEGATIVE_EFFECTS = HasNegativeEffectsPredicate()
 
 HAS_KEYWORD = lambda keyword: HasKeywordPredicate(keyword)
 HAS_STATUS = lambda status_id: HasStatusPredicate(status_id)

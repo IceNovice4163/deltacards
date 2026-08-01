@@ -360,6 +360,17 @@ A Monster without a Bullseye or a Dust effect normally enters the Dustpile immed
 
 An Enchantment on the Monster's former Board Slot remains on that slot.
 
+The engine records the immediate cause of each Monster death:
+
+- **Combat**: lethal combat damage;
+- **Damage effect**: lethal non-combat damage;
+- **Destroy effect**: an effect that directly kills or destroys the Monster;
+- **Other**: a stat change or another rule transition that causes death.
+
+An effect that happens during an attack is not automatically a Combat kill.
+Only death caused by combat damage has the Combat cause. For example, a
+Support effect that directly destroys a Monster has the Destroy-effect cause.
+
 ---
 
 ## Monster keywords and statuses
@@ -377,6 +388,7 @@ An Enchantment on the Monster's former Board Slot remains on that slot.
 - **Silenced**: This monster is silenced;
 - **Wanted**: When this monster dies, give 1 gold to its opponent.
 - **Darkspawn**: This monster takes no damage from spells, and cannot be targeted by choice-targeting spells.
+- **Flowery Power**: This card's Need condition is always fulfilled.
 - **Determination**: This monster is immune to Silence. This status is innate to all DETERMINATION rarity monsters;
 
 ### Statuses
@@ -402,6 +414,23 @@ Silence follows these rules:
 Silence doesn't permanently prevent the Monster from receiving future changes.
 
 New buffs, debuffs, keywords and statuses may be added after it is Silenced.
+
+---
+
+## Negative effects
+
+For effects that check for or remove "negative effects", the removable
+negative effects are:
+
+- a positive cost buff;
+- a negative Attack buff;
+- a negative maximum-HP buff;
+- KR, Disarmed, Silenced, or Wanted;
+- Paralyzed.
+
+Damage and missing HP are not negative effects for this purpose. Continuous
+modifiers are also not removed. Removing Silenced does not restore buffs,
+keywords, statuses, or abilities that were already removed by Silence.
 
 ---
 
@@ -436,7 +465,11 @@ Synergy succeeds if a previously played allied Monster had an overlapping Tribe.
 ---
 
 ## Ability keywords
-- **Need**: This card's Magic effect can only trigger if the following condition is met. This card will glow yellow in your hand while its condition is met.
+- **Need**: This card's Magic effect can only trigger from its normal play if
+  the following condition is met. The condition is evaluated after play and
+  target validation, immediately before the card leaves the hand. That result
+  is retained for the rest of that play. Triggering Magic directly through
+  another effect does not reevaluate Need.
 - **Program (X)**: If you have at least X gold, spend that gold to trigger the following effect.
 - **Switch**: Whenever this effect triggers, if the monster is on the left side of the board do the first part of the effect, otherwise do the second one.
 

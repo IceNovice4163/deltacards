@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from deltacards.model.enums import Ability, DamageKind, PlayerId
+from deltacards.model.enums import Ability, DamageKind, KillCause, PlayerId
 from deltacards.model.snapshots import (
     BoardSlotSnapshot,
     CardSnapshot,
@@ -234,6 +234,8 @@ class CardPlayedResult(ActionResult):
     player_id: PlayerId
     card_id: int
     card: CardSnapshot
+    has_need_condition: bool = False
+    need_fulfilled: bool = False
 
 
 @dataclass(slots=True, kw_only=True)
@@ -247,6 +249,7 @@ class MonsterKilledResult(ActionResult):
     monster: MonsterSnapshot
     killer_id: int
     killer: EntitySnapshot
+    cause: KillCause = KillCause.OTHER
 
 
 @dataclass(slots=True, kw_only=True)
