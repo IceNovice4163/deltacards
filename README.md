@@ -35,7 +35,7 @@ Or, for Windows: `".venv/Scripts/activate.bat"`
 ### 3. Install requirements
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ### 4. Download card definitions
@@ -51,6 +51,21 @@ python -m deltacards
 Specify custom decks:
 ```bash
 python -m deltacards --p1-deck "<base64/JSON deck code>" --p2-deck "<base64/JSON deck code>"
+```
+
+---
+
+## Playing through the web UI
+
+1. Follow the installation instructions above and make sure you can play through the terminal.
+2. Install `websockets` with `python -m pip install websockets`.
+3. Install the [deltacards Bridge](https://raw.githubusercontent.com/rashidsh/deltacards/main/deltacards/app/websocket/userscripts/deltacards-bridge.user.js) UnderScript plugin.
+4. Start the WebSocket server with `python -m deltacards.app.websocket`.
+5. Go to UnderScript settings → Plugins → deltacards Bridge and click the Start button.
+
+You can also specify custom decks to use when starting the server:
+```bash
+python -m deltacards.app.websocket --human-deck "<base64/JSON deck code>" --bot-deck "<base64/JSON deck code>"
 ```
 
 ---
