@@ -796,6 +796,12 @@ class Game:
         yield player.soul
         yield from [artifact for artifact in player.artifacts if artifact.active]
 
+    def _iter_game_start_sources_of_player(self, player: Player):
+        yield from self._iter_event_sources_of_player(player)
+
+        yield from player.hand.cards
+        yield from player.deck.cards
+
     def _iter_event_sources(self):
         for player in (self.turn_player, self.turn_player.opponent):
             yield from self._iter_event_sources_of_player(player)
@@ -894,6 +900,14 @@ class Game:
     def collect_ability_listener_effects(self, ability: Ability, player: Player, board_only: bool = False):
         for entity in self._iter_event_sources_of_player(player, board_only=board_only):
             effect = entity.get_ability(ability)
+            if effect is None:
+                continue
+
+            yield effect, entity
+
+    def collect_game_start_listener_effects(self, player: Player):
+        for entity in self._iter_game_start_sources_of_player(player):
+            effect = entity.get_ability(Ability.GAME_START)
             if effect is None:
                 continue
 

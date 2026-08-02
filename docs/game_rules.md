@@ -78,6 +78,23 @@ Players can obtain additional Artifacts during the game through card effects.
 
 There is no general limit to how many Artifacts a player can have.
 
+### Quests
+A Quest is an Artifact with a progress goal and a reward.
+
+Quest Artifacts follow the ordinary Artifact rules.
+
+A Quest Card starts its associated Quest at Game Start when that card is in
+its controller's hand or deck after mulligans have finished. Starting a Quest
+equips its Quest Artifact.
+
+A Quest's progress is shown by its counter. A Quest completes when its progress
+reaches its goal.
+
+- A repeatable Quest resolves its reward, then resets its progress to 0.
+- A non-repeatable Quest resolves its reward, then becomes disabled.
+- Progress cannot exceed the Quest goal.
+- Completing a Quest does not carry excess progress into the next completion.
+
 ---
 
 ## Board Slots and Enchantments
@@ -454,7 +471,7 @@ Synergy succeeds if a previously played allied Monster had an overlapping Tribe.
 - **Synergy**: The monster will trigger its effect when played and if an ally monster of the same tribe has been played this turn.
 - **Dust**: The monster will trigger its effect when dying.
 - **Delay**: The card will trigger this effect at the end of the turn it was played. Delay is scheduled as an independent effect. It will trigger even if the card is killed, silenced or removed from the board before the turn ends.
-- **Game Start**: This effect will be triggered after setup and mulligans, before the first turn begins.
+- **Game Start**: This effect will be triggered after setup and mulligans, before the first turn begins. A card may also trigger Game Start while it is in its controller's hand or deck.
 - **Turn Start**: The entity will trigger its effect at the start of its turn.
 - **Turn End**: The entity will trigger its effect at the end of its turn.
 - **Shock**: After you cast a spell with a base cost of 2 or more, trigger this effect.

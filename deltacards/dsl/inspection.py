@@ -5,8 +5,16 @@ from deltacards.model.cards import Card, Monster
 from deltacards.model.entity import Entity
 from deltacards.model.enums import Ability, CardKeyword, CardType, Expansion, PlayerId, Tribe
 from deltacards.model.player import Player
-from deltacards.model.snapshots import ArtifactSnapshot, CardSnapshot, EntitySnapshot, MonsterSnapshot, PlayerSnapshot, \
-    SoulSnapshot
+from deltacards.model.snapshots import (
+    ArtifactSnapshot,
+    BoardSlotSnapshot,
+    CardSnapshot,
+    EnchantmentSnapshot,
+    EntitySnapshot,
+    MonsterSnapshot,
+    PlayerSnapshot,
+    SoulSnapshot,
+)
 from deltacards.model.templates import CardTemplate, MonsterTemplate
 
 _MISSING = object()
@@ -113,7 +121,17 @@ def controller_id_of(entity: Any, default: Any = _MISSING) -> PlayerId | Any:
     if isinstance(entity, (Player, PlayerSnapshot)):
         return entity.id
 
-    if isinstance(entity, (Card, CardSnapshot, ArtifactSnapshot, SoulSnapshot)):
+    if isinstance(
+        entity,
+        (
+            Card,
+            CardSnapshot,
+            ArtifactSnapshot,
+            BoardSlotSnapshot,
+            EnchantmentSnapshot,
+            SoulSnapshot,
+        ),
+    ):
         return entity.controller_id
 
     return default

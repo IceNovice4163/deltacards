@@ -681,6 +681,7 @@ class SetStats(Action):
 
         if hp is not None:
             assert isinstance(target, Monster)
+            target.hp_missing = 0
             target.buff(hp=hp - (target.base.hp + target.buffs.max_hp))
 
             if target.hp <= 0 and target.zone is CardZone.BOARD:

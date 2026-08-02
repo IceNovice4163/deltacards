@@ -208,10 +208,7 @@ class GameRunner:
         effect_sources = []
 
         for player in (self.game.turn_player, self.game.turn_player.opponent):
-            for effect, source in self.game.collect_ability_listener_effects(
-                Ability.GAME_START,
-                player=player,
-            ):
+            for effect, source in self.game.collect_game_start_listener_effects(player):
                 effect_sources.append(source)
 
         for source in reversed(effect_sources):

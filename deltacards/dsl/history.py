@@ -272,6 +272,7 @@ class HistorySelector(TargetSelector):
 
     player: Any | None = None
     controller: Any | None = None
+    killer_controller: Any | None = None
     turn_player: Any | None = None
 
     source: Any | None = None
@@ -287,6 +288,7 @@ class HistorySelector(TargetSelector):
 
         player_id = _resolve_player_id(self.player, ctx=ctx, **kwargs)
         controller_id = _resolve_player_id(self.controller, ctx=ctx, **kwargs)
+        killer_controller_id = _resolve_player_id(self.killer_controller, ctx=ctx, **kwargs)
         turn_player_id = _resolve_player_id(self.turn_player, ctx=ctx, **kwargs)
 
         source_id = _resolve_entity_id(self.source, ctx=ctx, **kwargs)
@@ -300,6 +302,7 @@ class HistorySelector(TargetSelector):
             for value in (
                 player_id,
                 controller_id,
+                killer_controller_id,
                 turn_player_id,
                 source_id,
                 target_id,
@@ -312,6 +315,7 @@ class HistorySelector(TargetSelector):
 
         check_player = player_id is not None
         check_controller = controller_id is not None
+        check_killer_controller = killer_controller_id is not None
         check_turn_player = turn_player_id is not None
         check_source = source_id is not None
         check_target = target_id is not None
@@ -329,6 +333,9 @@ class HistorySelector(TargetSelector):
                 continue
 
             if check_controller and controller_id_of(entry, default=_MISSING) != controller_id:
+                continue
+
+            if check_killer_controller and controller_id_of(entry.killer, default=_MISSING) != killer_controller_id:
                 continue
 
             if check_turn_player and entry.turn_player_id != turn_player_id:
@@ -362,7 +369,17 @@ class HistorySelector(TargetSelector):
         if self.scope is not THIS_GAME:
             args.append(f"scope={self.scope!r}")
 
-        for name in ('player', 'controller', 'turn_player', 'source', 'target', 'killer', 'attacker', 'defender'):
+        for name in (
+            'player',
+            'controller',
+            'killer_controller',
+            'turn_player',
+            'source',
+            'target',
+            'killer',
+            'attacker',
+            'defender',
+        ):
             value = getattr(self, name)
             if value is not None:
                 args.append(f"{name}={value!r}")
@@ -442,6 +459,7 @@ def MONSTERS_DIED(
     scope: HistoryScope = THIS_GAME,
     controller: Any | None = None,
     killer: Any | None = None,
+    killer_controller: Any | None = None,
     turn_player: Any | None = None,
 ) -> HistorySelector:
     return HistorySelector(
@@ -449,6 +467,7 @@ def MONSTERS_DIED(
         scope=scope,
         controller=controller,
         killer=killer,
+        killer_controller=killer_controller,
         turn_player=turn_player,
     )
 

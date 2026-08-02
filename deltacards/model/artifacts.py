@@ -60,6 +60,10 @@ class Artifact(Entity):
             [artifact_id for artifact_id, artifact_cls in ARTIFACTS.items() if self.__class__ is artifact_cls][0],
         )
 
+    @property
+    def is_quest(self) -> bool:
+        return False
+
     def get_ability(self, ability: Ability):
         if not self.active:
             return None
@@ -83,3 +87,13 @@ class Artifact(Entity):
 
     def toggle(self, enabled: bool):
         self.active = enabled
+
+
+class QuestArtifact(Artifact):
+    __slots__ = ()
+
+    quest_goal: ClassVar[int | None] = None
+
+    @property
+    def is_quest(self) -> bool:
+        return True

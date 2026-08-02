@@ -202,11 +202,13 @@ from deltacards.dsl.transforms import (
     EXACT_COPY,
     GENERATE_CARD,
     LEFTMOST,
-    LIMIT_PER, MAX,
+    LIMIT_PER,
+    MAX,
     MIN,
     RANDOM,
     RIGHTMOST,
     SORT_BY,
+    WEIGHTED_RANDOM,
 )
 from deltacards.dsl.values import (
     ATTACK,
@@ -381,6 +383,7 @@ __all__ = (
 
     # Transforms
     'RANDOM',
+    'WEIGHTED_RANDOM',
     'MIN',
     'MAX',
     'LEFTMOST',

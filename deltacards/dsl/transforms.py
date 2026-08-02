@@ -35,6 +35,43 @@ class RandomTransform(Transform):
 
 
 @dataclass(frozen=True, slots=True, eq=False)
+class WeightedRandomTransform(Transform):
+    weights: tuple[ValueExpr, ...]
+
+    def apply(self, entities: list[Any], ctx: 'ActionContext', **kwargs) -> list[Any]:
+        if len(entities) != len(self.weights):
+            raise TargetingError(
+                f"WEIGHTED_RANDOM received {len(entities)} candidates "
+                f"and {len(self.weights)} weights"
+            )
+
+        weighted_entities = []
+
+        for entity, weight_expr in zip(entities, self.weights):
+            weight = weight_expr.eval(ctx=ctx, entity=entity, **kwargs)
+            if not isinstance(weight, int):
+                raise TargetingError(
+                    f"WEIGHTED_RANDOM weights must be integers, got "
+                    f"{type(weight).__name__}"
+                )
+
+            if weight < 0:
+                raise TargetingError(
+                    "WEIGHTED_RANDOM weights must not be negative"
+                )
+
+            weighted_entities.extend([entity] * weight)
+
+        if not weighted_entities:
+            return []
+
+        return [ctx.game.rng.choice(weighted_entities)]
+
+    def __repr__(self) -> str:
+        return f"WEIGHTED_RANDOM({', '.join(repr(weight) for weight in self.weights)})"
+
+
+@dataclass(frozen=True, slots=True, eq=False)
 class MinMaxTransform(Transform):
     mode: Literal['min', 'max']
     key: ValueExpr
@@ -122,6 +159,7 @@ class SortByTransform(Transform):
 class GenerateCardsTransform(Transform):
     controller: TargetSelector
     creator: TargetSelector | None
+    count: ValueExpr
 
     def apply(self, entities: list[Any], ctx: 'ActionContext', **kwargs) -> list[Any]:
         controller = self.controller.eval_optional_one(ctx=ctx, **kwargs)
@@ -141,24 +179,34 @@ class GenerateCardsTransform(Transform):
                 if isinstance(creator, Entity):
                     creator_id = creator.id
 
+        count = self.count.eval(ctx=ctx, **kwargs)
+        if count <= 0:
+            return []
+
         assert all(isinstance(e, CardTemplate) for e in entities)
         template_ids = tuple(template.id for template in entities)
 
         result = []
         for template_id in template_ids:
-            result.append(
-                ctx.game.create_card(
-                    template_id=template_id,
-                    controller_id=controller.id,
-                    creator_id=creator_id,
-                    creator_base_identity=creator_base_identity,
+            for _ in range(count):
+                result.append(
+                    ctx.game.create_card(
+                        template_id=template_id,
+                        controller_id=controller.id,
+                        creator_id=creator_id,
+                        creator_base_identity=creator_base_identity,
+                    )
                 )
-            )
 
         return result
 
     def __repr__(self) -> str:
-        return f"GenerateCardsTransform(controller={self.controller!r}, creator={self.creator!r})"
+        return (
+            f"GenerateCardsTransform("
+            f"controller={self.controller!r}, "
+            f"creator={self.creator!r}, "
+            f"count={self.count!r})"
+        )
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -234,6 +282,12 @@ def RANDOM(n: int | ValueExpr = 1) -> RandomTransform:
     return RandomTransform(to_value(n))
 
 
+def WEIGHTED_RANDOM(*weights: int | ValueExpr) -> WeightedRandomTransform:
+    return WeightedRandomTransform(
+        weights=tuple(to_value(weight) for weight in weights),
+    )
+
+
 def MIN(key: ValueExpr, n: int | ValueExpr = 1) -> MinMaxTransform:
     return MinMaxTransform('min', key=key, n=to_value(n))
 
@@ -255,10 +309,12 @@ def GENERATE_CARD(
     *,
     controller: TargetSelector | None = None,
     creator: TargetSelector | None = None,
+    count: int | ValueExpr = 1,
 ):
     transform = GenerateCardsTransform(
         controller=YOU if controller is None else controller,
         creator=SELF if creator is None else creator,
+        count=to_value(count),
     )
 
     if spec is None:
