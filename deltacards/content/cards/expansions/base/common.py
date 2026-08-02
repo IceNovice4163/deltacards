@@ -519,7 +519,7 @@ class AnimeSword(Monster):
 
     delay = ((HAND & IS_MONSTER) >> RANDOM(1)).buff(
         attack=SELF.attack,
-        hp=SELF.hp
+        hp=SELF.max_hp
     )
 
 

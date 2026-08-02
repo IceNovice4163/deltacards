@@ -39,10 +39,13 @@ class Kris(Monster):
 
 @card(505)
 class SoullessKris(Monster):
-    magic = (
-        YOU.add_artifact(ARTIFACT_BY_NAME("Dark Fountain")).to(
-            YOU.artifact("Dark Fountain").update_artifact_counter(
-                COUNT_DISTINCT(CARDS_PLAYED(player=YOU), TEMPLATE_ID)
+    magic = YOU.add_artifact(
+        ARTIFACT_BY_NAME("Dark Fountain")
+    ).to(
+        YOU.artifact("Dark Fountain").update_artifact_counter(
+            COUNT_DISTINCT(
+                CARDS_PLAYED(player=YOU) & NON_TOKEN,
+                TEMPLATE_ID
             )
         )
     )
@@ -56,7 +59,7 @@ class TheVessel(Monster):
         (
             CARDS_PLAYED(player=YOU)
             & NON_TOKEN
-            & (CARD_ID != SELF.id)
+            & (TEMPLATE_ID != SELF.template_id)
         ).last()
         >> AS_CARDS()
     )
@@ -148,3 +151,33 @@ class HammerOfJustice(Monster):
             ENCHANTMENT_BY_NAME('gersons-hammer')
         )
     )
+
+
+@card(977)
+class Pink(Monster):
+    game_start = YOU.add_artifact(
+        ARTIFACT_BY_NAME("Doki-Meter!")
+    )
+
+
+@card(986)
+class Flowery(Monster):
+    game_start = YOU.add_artifact(
+        ARTIFACT_BY_NAME("Power of Friendship")
+    )
+
+    magic = GENERATE_CARD("Our OMEGA").to_hand()
+
+    @on_event(AttackResolvedResult)
+    def on_attack_resolved(self, res: AttackResolvedResult, game, **kwargs):
+        if res.attacker_id != self.id:
+            return None
+
+        if not res.defender_dead:
+            return None
+
+        defender = game.entity(res.defender_id)
+        if not isinstance(defender, Monster):
+            return None
+
+        return GENERATE_CARD("Our OMEGA").to_hand()

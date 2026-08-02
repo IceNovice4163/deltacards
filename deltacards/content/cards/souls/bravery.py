@@ -19,11 +19,8 @@ class Rage(Spell):
 
     magic = (
         FRONT(TARGET).hit(TARGET.attack)
-        >> SELF.schedule_delay_effect()
+        >> TARGET.buff(attack=+1, hp=+1)
     )
-
-    delay = TARGET.buff(attack=+1, hp=+1)
-
 
 
 @card(79)

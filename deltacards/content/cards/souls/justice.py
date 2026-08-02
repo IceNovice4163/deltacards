@@ -88,11 +88,14 @@ class MultiShot(Spell):
     delay = (
         Check(YOU & HAS_ARTIFACT("True Justice")).to(
             While(
-                _artifact.counter > 0,
+                (_artifact.counter > 0) & _artifact.active,
                 _artifact.trigger_ability(Ability.TURN_END)
+            ),
+            else_=YOU.add_artifact(
+                ARTIFACT_BY_NAME("True Justice")
             )
         )
-        >> YOU.add_artifact(ARTIFACT_BY_NAME("True Justice"))
+        >> _artifact.update_artifact_counter(+6)
     )
 
 
@@ -111,7 +114,7 @@ class BlitzQuiz(Spell):
 class Powerhouse(Spell):
     magic = (
         DrawUpTo(2)
-        >> HAND.buff(cost=-1, min_cost=1)
+        >> HAND.buff(cost=-1)
     )
 
 

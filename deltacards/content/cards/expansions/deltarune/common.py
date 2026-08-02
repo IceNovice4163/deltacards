@@ -813,7 +813,93 @@ class TuningFork(Monster):
 @card(957)
 class PixelLizard(Monster):
     turn_end = Check(
-        GOLD_SPENT(player=YOU, scope=THIS_TURN, reason='play_spell') & TOKEN
+        GOLD_SPENT(player=YOU, scope=THIS_TURN)
+        & TOKEN
+        & (TEMPLATE_NAME != "Lightning Bolt")
     ).to(
         GENERATE_CARD("Lightning Bolt").to_hand()
     )
+
+
+@card(961)
+class Shi(Monster):
+    turn_start = Switch(
+        left=(ALLY_MONSTERS & ~SELF).buff(attack=+1, hp=+1),
+        right=ENEMIES.hit(1)
+    )
+
+
+@card(963)
+class Strengthmeter(Monster):
+    magic = SELF.buff(
+        attack=SUM(ADJACENT(SELF), ATTACK)
+    )
+
+
+@card(964)
+class MantisDancer(Monster):
+    targets = ALL_PLAYERS | ALL_MONSTERS
+
+    hit_result: Var[StepResult] = Var(StepResult)
+
+    magic = (
+        TARGET.hit(3).store_result(hit_result).to(
+            Check(hit_result.killed).to(
+                Cast(
+                    card=GENERATE_CARD("Carousel"),
+                    controller=YOU
+                )
+            )
+        )
+    )
+
+
+@card(967)
+class Floradinn(Monster):
+    turn_start = GENERATE_CARD("Green Clover").to_hand() * 2
+
+
+@card(968)
+class CherryTree(Monster):
+    turn_start = SELF.buff(hp=+2)
+
+
+@card(972)
+class Terakota(Monster):
+    targets = ALLY_SLOTS
+
+    magic = TARGET.enchant(
+        ENCHANTMENT_BY_NAME('soil')
+    )
+
+
+@card(976)
+class Leafling(Monster):
+    generated_cards: Var[TargetSelector] = Var(TargetSelector)
+    generated_card: Var[TargetSelector] = Var(TargetSelector)
+
+    support = Check(
+        ATTACKER & (TEMPLATE_NAME != "Green Clover")
+    ).to(
+        SetVar(
+            var=generated_cards,
+            value=GENERATE_CARD(
+                "Green Clover",
+                count=EMPTY_SLOTS(BOARD)
+            )
+        )
+        >> generated_cards.summon()
+        >> ForEach(
+            generated_cards,
+            var=generated_card,
+            effect=generated_card.force_attack(DEFENDER)
+        )
+    )
+
+
+@card(984)
+class TerakotaArcher(Monster):
+    targets = ENEMY_MONSTERS
+
+    magic = TARGET.hit(COUNT(HAND))
+    bullseye = GENERATE_CARD("Green Clover").summon(attack=2, hp=3)

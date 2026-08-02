@@ -183,6 +183,9 @@ class DarkFountain(Artifact):
         if res.player_id != self.controller_id:
             return None
 
+        if res.card.template.rarity is CardRarity.TOKEN:
+            return None
+
         for old_res in game.log_by_type[CardPlayedResult]:
             if old_res.id == res.id:
                 continue
@@ -443,3 +446,31 @@ class GoldWidow(Artifact):
         yield self.generated_card.to_hand()
 
         return None
+
+
+@artifact(75)
+class PetalFeather(Artifact):
+    name = "Petal Feather"
+    rarity = ArtifactRarity.LEGENDARY
+
+    @on_event(MonsterSummonedResult)
+    def on_monster_summoned(self, res: MonsterSummonedResult, game, **kwargs):
+        if not res.is_played:
+            return None
+
+        if res.player_id != self.controller_id:
+            return None
+
+        monster = game.entity(res.monster_id)
+        return Check(
+            COUNT(
+                CARDS_PLAYED(
+                    player=YOU,
+                    scope=THIS_TURN
+                )
+                & IS_MONSTER
+            ) == 3
+        ).to(
+            monster.actions.buff(attack=+1, hp=+1)
+            >> monster.actions.add_keyword(HASTE)
+        )

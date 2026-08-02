@@ -112,7 +112,7 @@ class WormInfusion(Spell):
 
     magic = (
         SetVar(var=worm, value=GENERATE_CARD("Worm"))
-        >> worm.set_stats(
+        >> worm.set_base_stats(
             attack=TARGET.attack,
             hp=TARGET.hp
         )

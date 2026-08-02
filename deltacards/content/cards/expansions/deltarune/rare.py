@@ -99,7 +99,7 @@ class Snowy(Monster):
 
 
 @card(291)
-class StripedBird(Monster):
+class NormalNPC(Monster):
     @on_event(AttackResolvedResult)
     def on_attack_resolved(self, res: AttackResolvedResult, game, **kwargs):
         if res.attacker_id != self.id:
@@ -208,9 +208,7 @@ class Animals(Monster):
 
 @card(412)
 class EvilBlueprints(Monster):
-    magic = SELF.schedule_delay_effect()
-
-    delay = GENERATE_CARD("Thrashing Machine").to_hand()
+    magic = GENERATE_CARD("Thrashing Machine").to_hand()
 
 
 @card(413)
@@ -754,10 +752,7 @@ class RockPoster(Monster):
 
     shock = Check(_spells_not_cast_yet).to(
         (_spells_not_cast_yet >> RANDOM(1) >> GENERATE_CARD()).to_hand(),
-        else_=(
-            GENERATE_CARD("Rock Chord").to_hand()
-            >> SELF.toggle_ability(SHOCK, False)
-        )
+        else_=GENERATE_CARD("Rock Chord").to_hand()
     )
 
 
@@ -821,6 +816,104 @@ class TitanFuzzy(Monster):
 
 @card(953)
 class MausHand(Monster):
-    targets = ALL_MONSTERS & (COST <= 2)
+    targets = ALL_MONSTERS & (BASE_COST <= 2)
 
     magic = (TARGET >> COPY()).summon()
+
+
+@card(960)
+class Shinobeetle(Monster):
+    bullseye = (
+        SELF.buff(hp=+1)
+        >> SELF.add_keyword(HASTE)
+        >> SELF.refresh_attacks()
+    )
+
+    def iter_modifiers(self, game):
+        if (self.zone is not CardZone.BOARD) or self.silenced:
+            return
+
+        def other_ally_count() -> int:
+            return sum(
+                1
+                for monster in game.player(self.controller_id).board.cards
+                if (monster is not self)
+            )
+
+        yield IntModifier(
+            kind=ModKind.ATTACK,
+            layer=StatLayer.ADD,
+            source=self,
+            description="-1 ATK for each other ally monster",
+            applies=lambda q: q.monster is self,
+            apply=lambda attack, q: attack - other_ally_count(),
+        )
+
+
+@card(966)
+class Hopschef(Monster):
+    generated_card: Var[Card] = Var(Card)
+
+    magic = (
+        SetVar(
+            var=generated_card,
+            value=GENERATE_CARD(
+                "Sauerdough",
+                controller=OPPONENT,
+            )
+        )
+        >> generated_card.summon(
+            controller=OPPONENT,
+            attack=1,
+            hp=2
+        )
+        >> SELF.schedule_delay_effect()
+    )
+
+    delay = Check(generated_card.dead).to(
+        GENERATE_CARD("Sauerdough").summon(),
+        else_=generated_card.kill()
+    )
+
+
+@card(974)
+class MrButterfly(Monster):
+    need = EXISTS(
+        CARDS_PLAYED(player=YOU, scope=THIS_TURN)
+        & (COST >= 6)
+    )
+
+    magic = GENERATE_CARD("Blue Rose").summon()
+
+
+@card(985)
+class GiantShrubbery(Monster):
+    def iter_modifiers(self, game):
+        if (self.zone is not CardZone.BOARD) or self.silenced:
+            return
+
+        def is_adjacent_plant(monster: Monster) -> bool:
+            return (
+                monster.controller_id == self.controller_id
+                and monster.zone is CardZone.BOARD
+                and abs(monster.pos - self.pos) == 1
+                and monster.has_tribe(Tribe.PLANT)
+            )
+
+        yield IntModifier(
+            kind=ModKind.ATTACK,
+            layer=StatLayer.ADD,
+            source=self,
+            description="Adjacent Plants have +2 ATK.",
+            applies=lambda q: is_adjacent_plant(q.monster),
+            apply=lambda attack, q: attack + 2,
+        )
+
+        yield IntModifier(
+            kind=ModKind.MAX_HP,
+            layer=StatLayer.ADD,
+            source=self,
+            description="Adjacent Plants have +2 max HP.",
+            applies=lambda q: is_adjacent_plant(q.monster),
+            apply=lambda max_hp, q: max_hp + 2,
+        )

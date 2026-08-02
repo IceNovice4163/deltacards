@@ -60,6 +60,7 @@ CONTENT_MODULES = [
     'deltacards.content.artifacts.base',
     'deltacards.content.artifacts.common',
     'deltacards.content.artifacts.legendary',
+    'deltacards.content.artifacts.quests',
     'deltacards.content.artifacts.token',
 
     # Souls

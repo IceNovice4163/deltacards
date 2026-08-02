@@ -467,16 +467,16 @@ class Noellecoaster(Monster):
             var=spell_count,
             value=COUNT(SPELLS_CAST(player=YOU) & (BASE_COST >= 2))
         )
-        >> SELF.buff(attack=spell_count, hp=spell_count)
         >> YOU.choose(
             (
                 CARD_LIBRARY
                 & IS_SPELL
                 & NON_TOKEN
-                & (COST == SELF.cost)
+                & (COST == spell_count)
             ) >> RANDOM(3) >> GENERATE_CARD()
         ).to(
-            Cast(
+            SELF.buff(attack=spell_count, hp=spell_count)
+            >> Cast(
                 card=CHOICE_SELECTED,
                 controller=YOU,
                 effect_target=FRONT(SELF)
@@ -694,7 +694,10 @@ class Cuptower(Monster):
 
 @card(923)
 class PixelKris(Monster):
-    need = EXISTS(MONSTERS_DIED(scope=THIS_TURN) & (COST >= 2))
+    need = EXISTS(
+        MONSTERS_DIED(scope=THIS_TURN)
+        & (BASE_COST >= 2)
+    )
 
     magic = Check(FRONT(SELF)).to(
         SELF.buff(attack=FRONT(SELF).attack)
@@ -780,3 +783,55 @@ class RockstarSusie(Monster):
         SELF.heal(SELF.max_hp - SELF.hp)
         >> SELF.toggle_ability(SHOCK, True)
     )
+
+
+@card(962)
+class TrialKris(Monster):
+    magic = SELF.schedule_delay_effect()
+
+    delay = (
+        YOU.add_artifact(
+            ARTIFACT_BY_NAME("True Justice")
+        )
+        >> YOU.artifact("True Justice").update_artifact_counter(
+            COUNT(MONSTERS_DIED(scope=THIS_TURN))
+        )
+    )
+
+
+@card(971)
+class DuckOfDoom(Monster):
+    bullseye = (ALL_MONSTERS & ~SELF).kill()
+
+
+@card(973)
+class TrialSusie(Monster):
+    @on_event(AttackResolvedResult)
+    def on_attack_resolved(self, res: AttackResolvedResult, game, **kwargs):
+        if res.attacker_id != self.id:
+            return None
+
+        if res.attacker_dead:
+            return None
+
+        return (
+            (ALL_MONSTERS & ~SELF).set_stats(hp=SELF.hp)
+            >> SELF.silence()
+        )
+
+
+@card(975)
+class TrialRalsei(Monster):
+    magic = SELF.schedule_delay_effect()
+
+    delay = (
+        (
+            MONSTERS_DIED(
+                controller=YOU,
+                scope=THIS_TURN
+            )
+            & NON_DT
+        )
+        >> AS_CARDS()
+        >> COPY()
+    ).summon(attack=3, hp=3)

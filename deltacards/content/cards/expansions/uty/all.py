@@ -547,9 +547,10 @@ class GoldenMirror(Monster):
             kind=ModKind.COST,
             layer=CostLayer.ADD,
             source=self,
-            description="Non-TOKEN enemy spells cost +1 GOLD",
+            description="Non-TOKEN spells in the enemy hand have +1 COST",
             applies=lambda q: (
                 isinstance(q.card, Spell)
+                and q.card.zone is CardZone.HAND
                 and q.card.controller_id != self.controller_id
                 and q.card.template.rarity is not CardRarity.TOKEN
             ),
@@ -622,7 +623,10 @@ class Violetta(Monster):
     generated_card: Var[Card] = Var(Card)
 
     magic = (
-        SetVar(var=generated_card, value=GENERATE_CARD("Blue Flower"))
+        SetVar(
+            var=generated_card,
+            value=GENERATE_CARD("Blue Rose")
+        )
         >> generated_card.buff(
             cost=-COUNT(ALLY_MONSTERS & ~SELF)
         )

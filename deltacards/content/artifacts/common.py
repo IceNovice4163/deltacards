@@ -227,6 +227,7 @@ class EvilPlan(Artifact):
     rarity = ArtifactRarity.COMMON
 
     X: Var[Card] = Var(Card)
+    generated_card: Var[Card] = Var(Card)
 
     game_start = Check((BOARD | HAND | DECK) & (TEMPLATE_NAME == "Ultimathrash")).to(
         SELF.transform_artifact(ARTIFACT_BY_NAME("Ultimate Fusion"))
@@ -243,7 +244,14 @@ class EvilPlan(Artifact):
         return ForEach(
             CARD_LIBRARY & HAS_TRIBE(Tribe.THRASHING_PART),
             var=self.X,
-            effect=(self.X >> GENERATE_CARD()).to_hand()
+            effect=(
+                SetVar(
+                    var=self.generated_card,
+                    value=self.X >> GENERATE_CARD(),
+                )
+                >> self.generated_card.buff(attack=+1)
+                >> self.generated_card.to_hand()
+            )
         ) >> SELF.toggle_artifact(False)
 
 

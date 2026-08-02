@@ -232,3 +232,14 @@ class TheCure(Enchantment):
         THIS_SLOT_MONSTER.remove_negative_effects()
         >> THIS_SLOT_MONSTER.add_keyword(KR)
     )
+
+
+@enchantment('soil')
+class Soil(Enchantment):
+    name = "Soil"
+
+    turn_end = Check(
+        ~EXISTS(THIS_SLOT_MONSTER)
+    ).to(
+        GENERATE_CARD("Green Clover").summon(pos=SLOT_OF(SELF).pos)
+    )

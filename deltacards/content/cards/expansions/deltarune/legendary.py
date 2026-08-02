@@ -252,8 +252,17 @@ class Snoelle(Monster):
 
 @card(714)
 class CagedJester(Monster):
-    # TODO
-    ...
+    magic = YOU.add_artifact(
+        ARTIFACT_BY_NAME("Freedom")
+    ).to(
+        YOU.artifact("Freedom").update_artifact_counter(
+            COUNT_DISTINCT(
+                SPELLS_CAST(player=YOU)
+                & NON_TOKEN
+                & ANOTHER_SOUL_THAN(YOU)
+            )
+        )
+    )
 
 
 @card(726)
@@ -371,3 +380,102 @@ class Carol(Monster):
 @card(929)
 class ChefRouxls(Monster):
     magic = GENERATE_CARD("Laser Pointere").to_hand()
+
+
+@card(965)
+class Blue(Monster):
+    need = (
+        SPENT_GOLD_AMOUNT(
+            player=YOU,
+            scope=THIS_TURN,
+            reason='play_monster'
+        )
+        + SPENT_GOLD_AMOUNT(
+            player=YOU,
+            scope=THIS_TURN,
+            reason='play_spell'
+        )
+    ) >= 8
+
+    magic = GENERATE_CARD("Blue Rose").summon() * 3
+
+
+@card(970)
+class Aqua(Monster):
+    need = COUNT(
+        CARDS_DRAWN(
+            player=YOU,
+            scope=THIS_TURN
+        )
+    ) >= 3
+
+    magic = (
+        ENEMIES.hit(1)
+        >> YOU.draw_next()
+    )
+
+
+@card(979)
+class Green(Monster):
+    other_ally_monsters: Var[TargetSelector] = Var(TargetSelector)
+
+    need = SUM(
+        HEALING_DONE(controller=YOU),
+        HEALED_AMOUNT
+    ) >= 12
+
+    magic = (
+        SetVar(
+            var=other_ally_monsters,
+            value=ALLY_MONSTERS & ~SELF
+        )
+        >> other_ally_monsters.buff(attack=+1, hp=+1)
+        >> other_ally_monsters.add_keyword(CANDY)
+    )
+
+
+@card(980)
+class Seth(Monster):
+    need = COUNT(
+        ALL_MONSTERS & HAS_NEGATIVE_EFFECTS
+    ) >= 3
+
+    magic = ENEMY_MONSTERS.buff(attack=-2, hp=-2)
+
+
+@card(981)
+class Orange(Monster):
+    ally_monsters: Var[TargetSelector] = Var(TargetSelector)
+
+    need = COUNT(
+        ATTACKS_DECLARED(
+            attacker_controller=YOU,
+            scope=THIS_TURN
+        )
+    ) >= 3
+
+    magic = (
+        SetVar(var=ally_monsters, value=ALLY_MONSTERS)
+        >> ally_monsters.buff(attack=+1)
+        >> ally_monsters.add_keyword(HASTE)
+        >> ally_monsters.refresh_attacks()
+    )
+
+
+@card(982)
+class Yellow(Monster):
+    generated_card: Var[Card] = Var(Card)
+
+    need = COUNT(
+        MONSTERS_DIED(
+            scope=THIS_TURN,
+            killer_controller=YOU
+        )
+         & ~IS_COMBAT_KILL
+    ) >= 2
+
+    magic = (
+        SetVar(var=generated_card, value=GENERATE_CARD("Quick Draw"))
+        >> generated_card.set_status(LOOP, value=2)
+        >> generated_card.to_hand()
+    )

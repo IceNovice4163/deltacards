@@ -57,13 +57,7 @@ class Cloning(Spell):
     magic = (
         SetVar(var=copied_monster, value=TARGET >> COPY())
         >> copied_monster.summon(attack=3, hp=3).to(
-            Check(
-                copied_monster
-                & ~HAS_KEYWORD(CHARGE)
-                & ~HAS_KEYWORD(HASTE)
-            ).to(
-                copied_monster.add_keyword(HASTE)
-            )
+            copied_monster.add_keyword(HASTE)
         )
     )
 

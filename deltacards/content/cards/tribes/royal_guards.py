@@ -50,7 +50,7 @@ class TheHeroine(Monster):
             return None
 
         return [
-            ((DUSTPILE & IS_MONSTER) >> RANDOM(5)).erase(),
+            (DUSTPILE & IS_MONSTER)[:5].erase(),
             self.revive,
         ]
 
@@ -84,15 +84,15 @@ class RoyalGuard4(Monster):
 
 @card(716)
 class RoyalPapyrus(Monster):
-    magic = Check(
-        COUNT(
-            DUSTPILE
-            & IS_MONSTER
-            & NON_GENERATED
-            & (COST >= 9)
-        ) >= 10
-    ).to(
-        YOU.add_artifact(ARTIFACT_BY_NAME("Underground Army"))
+    need = COUNT(
+        DUSTPILE
+        & IS_MONSTER
+        & NON_GENERATED
+        & (COST >= 9)
+    ) >= 10
+
+    magic = YOU.add_artifact(
+        ARTIFACT_BY_NAME("Underground Army")
     )
 
 

@@ -343,8 +343,13 @@ class CasinoSans(Monster):
 
 @card(874)
 class ElUndercardio(Monster):
-    # TODO
-    ...
+    _random_pack = (
+        CARD_BY_NAME("Pack")
+        | CARD_BY_NAME("Super Pack")
+        | CARD_BY_NAME("Final Pack")
+    ) >> WEIGHTED_RANDOM(75, 20, 5)
+
+    magic = FillHand(YOU, _random_pack)
 
 
 @card(941)

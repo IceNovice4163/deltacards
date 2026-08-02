@@ -62,7 +62,6 @@ class Save(Artifact):
 class TrueJustice(Artifact):
     name = "True Justice"
     rarity = ArtifactRarity.TOKEN
-    initial_counter = 6
 
     _effect = Check(SELF.counter > 0).to(
         SELF.update_artifact_counter(-1)
@@ -388,24 +387,24 @@ class ConstrictingDarkness(Artifact):
             ) == 1
         ).to(
             SELF.update_artifact_counter(-2)
+            >> Check(SELF.counter == 0).to(
+                SELF.toggle_artifact(False)
+            )
         )
 
-    turn_end = Check(SELF.counter == 0).to(
-        SELF.toggle_artifact(False),
-        else_=Check(EMPTY_SLOTS(BOARD) > 0).to(
-            SELF.update_artifact_counter(+1)
-            >> SetVar(
-                var=generated_card,
-                value=GENERATE_CARD("Titan Spawn"),
-            )
-            >> generated_card.summon(attack=SELF.counter, hp=SELF.counter)
-            >> Check(
-                (SELF.counter == 7)
-                & ~EXISTS(YOU & HAS_ARTIFACT("The Roaring"))
-            ).to(
-                YOU.add_artifact(ARTIFACT_BY_NAME("The Roaring"))
-            )
-        ),
+    turn_end = Check(EMPTY_SLOTS(BOARD) > 0).to(
+        SELF.update_artifact_counter(+1)
+        >> SetVar(
+            var=generated_card,
+            value=GENERATE_CARD("Titan Spawn"),
+        )
+        >> generated_card.summon(attack=SELF.counter, hp=SELF.counter)
+        >> Check(
+            (SELF.counter == 7)
+            & ~EXISTS(YOU & HAS_ARTIFACT("The Roaring"))
+        ).to(
+            YOU.add_artifact(ARTIFACT_BY_NAME("The Roaring"))
+        )
     )
 
 
@@ -462,6 +461,7 @@ class DarkZone(Artifact):
 class OddController(Artifact):
     name = "Odd Controller"
     rarity = ArtifactRarity.TOKEN
+    initial_counter = 1
 
     turn_start = SELF.update_artifact_counter(+1)
 

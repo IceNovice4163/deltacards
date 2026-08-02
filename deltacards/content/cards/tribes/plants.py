@@ -149,10 +149,10 @@ class FlowerJar(Monster):
 
     magic = Program(2).to(
         YOU.spend_gold(2).to(
-            SELF.catch(GENERATE_CARD("Blue Flower")),
+            SELF.catch(GENERATE_CARD("Blue Rose")),
             else_=SELF.catch(GENERATE_CARD("Red Flower"))
         ),
-        else_=SELF.catch(GENERATE_CARD("Green Flower"))
+        else_=SELF.catch(GENERATE_CARD("Green Clover"))
     )
 
     dust = SELF.release_caught_card(var=released_card).to(
@@ -207,7 +207,7 @@ class FlowerCan(Monster):
     dust = For(
         2,
         effect=(
-            SetVar(var=generated_card, value=GENERATE_CARD("Green Flower"))
+            SetVar(var=generated_card, value=GENERATE_CARD("Green Clover"))
             >> generated_card.add_keyword(HASTE)
             >> generated_card.to_hand()
         )

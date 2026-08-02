@@ -184,11 +184,27 @@ class EchoFish(Monster):
 
     magic = (
         SELF.set_stats(attack=TARGET.attack, hp=TARGET.hp)
-        >> Check(TARGET & HAS_KEYWORD(TAUNT)).to(SELF.add_keyword(TAUNT))
-        >> Check(TARGET & HAS_KEYWORD(CANDY)).to(SELF.add_keyword(CANDY))
-        >> Check(TARGET & HAS_KEYWORD(CHARGE)).to(SELF.add_keyword(CHARGE))
-        >> Check(TARGET & HAS_KEYWORD(HASTE)).to(SELF.add_keyword(HASTE))
-        >> Check(TARGET & HAS_KEYWORD(TRANSPARENCY)).to(SELF.add_keyword(TRANSPARENCY))
+        >> Check(TARGET & HAS_KEYWORD(TAUNT)).to(
+            SELF.add_keyword(TAUNT)
+        )
+        >> Check(TARGET & HAS_KEYWORD(CANDY)).to(
+            SELF.add_keyword(CANDY)
+        )
+        >> Check(TARGET & HAS_KEYWORD(CHARGE)).to(
+            SELF.add_keyword(CHARGE)
+        )
+        >> Check(TARGET & HAS_KEYWORD(HASTE)).to(
+            SELF.add_keyword(HASTE)
+        )
+        >> Check(TARGET & HAS_KEYWORD(DARKSPAWN)).to(
+            SELF.add_keyword(DARKSPAWN)
+        )
+        >> Check(TARGET & HAS_STATUS(DODGE)).to(
+            SELF.set_status(DODGE, value=TARGET.status(DODGE))
+        )
+        >> Check(TARGET & HAS_KEYWORD(TRANSPARENCY)).to(
+            SELF.add_keyword(TRANSPARENCY)
+        )
     )
 
 
@@ -527,7 +543,10 @@ class FireChimney(Monster):
 
 @card(498)
 class SnailPen(Monster):
-    magic = ((ALLY_MONSTERS & HAS_TRIBE(Tribe.SNAIL)) >> COPY()).to_hand()
+    magic = (
+        (ALLY_MONSTERS & HAS_TRIBE(Tribe.SNAIL))
+        >> EXACT_COPY()
+    ).to_hand()
 
 
 @card(501)

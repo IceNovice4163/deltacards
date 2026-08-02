@@ -2,7 +2,7 @@ from deltacards.dsl.api import *
 
 
 @card(391)
-class ScissorDancer(Monster):
+class Sheary(Monster):
     targets = ALL_MONSTERS
 
     magic = Check(TARGET & DAMAGED).to(

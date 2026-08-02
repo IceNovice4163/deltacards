@@ -452,10 +452,36 @@ class GrandPrize(Monster):
     )
 
 
+def _gacha_ball_choice(rarity: CardRarity, gachapon):
+    return YOU.choose(
+        (
+            CARD_LIBRARY
+            & (RARITY == rarity)
+        ) >> RANDOM(4) >> GENERATE_CARD()
+    ).to(
+        CHOICE_SELECTED.to_hand()
+        >> gachapon.update_artifact_counter(+1)
+    )
+
+
 @card(900)
 class GachaBall(Spell):
-    # TODO
-    ...
+    _gachapon = YOU.artifact("Gachapon")
+
+    magic = Check(YOU & HAS_ARTIFACT("Gachapon")).to(
+        Check(_gachapon.active).to(
+            Check(_gachapon.counter % 4 == 0).to(
+                _gacha_ball_choice(COMMON, _gachapon),
+                else_=Check(_gachapon.counter % 4 == 1).to(
+                    _gacha_ball_choice(RARE, _gachapon),
+                    else_=Check(_gachapon.counter % 4 == 2).to(
+                        _gacha_ball_choice(EPIC, _gachapon),
+                        else_=_gacha_ball_choice(LEGENDARY, _gachapon)
+                    )
+                )
+            )
+        )
+    )
 
 
 @card(916)
@@ -463,7 +489,7 @@ class FoodStack(Spell):
     magic = (LOOP_COPY & HAND).erase().to(
         For(
             SELF.status(LOOP),
-            (ENEMIES >> RANDOM(1)).hit(3)
+            (ENEMY_MONSTERS >> RANDOM(1)).hit(3)
         )
     )
 
@@ -542,3 +568,117 @@ class BlackKnife(Spell):
             YOU.hit(damage_not_dealt)
         )
     )
+
+
+@card(969)
+class MewMewMagic(Spell):
+    _pink_on_board = EXISTS(
+        ALLY_MONSTERS
+        & (TEMPLATE_NAME == "Pink")
+    )
+
+    targets = (
+        ALLY_MONSTERS
+        | (
+            ENEMY_MONSTERS
+            & _pink_on_board
+        )
+    )
+
+    attack_before: Var[int] = Var(int)
+    hp_before: Var[int] = Var(int)
+    reduced_stats: Var[int] = Var(int)
+
+    _doki_meter = YOU.artifact("Doki-Meter!")
+
+    _complete_doki = Check(
+        _doki_meter.counter >= 15
+    ).to(
+        GENERATE_CARD("Pink's Ghost").summon()
+        >> GENERATE_CARD("Pink").to_deck()
+        >> _doki_meter.update_artifact_counter(-15)
+    )
+
+    _progress_doki = Check(_doki_meter.active).to(
+        _doki_meter.update_artifact_counter(
+            LEAST(
+                reduced_stats,
+                GREATEST(
+                    0,
+                    15 - _doki_meter.counter,
+                ),
+            )
+        )
+        >> _complete_doki,
+        else_=NO_EFFECT,
+    )
+
+    magic = (
+        SetVar(
+            var=attack_before,
+            value=TARGET.attack
+        )
+        >> SetVar(
+            var=hp_before,
+            value=TARGET.hp
+        )
+        >> TARGET.halve_stats(round_up=True).to(  # Mew Mew Magic halves stats rounded up
+            SetVar(
+                var=reduced_stats,
+                value=GREATEST(
+                    0,
+                    (attack_before - TARGET.attack)
+                    + (hp_before - TARGET.hp)
+                )
+            )
+            >> Check(
+                YOU & HAS_ARTIFACT("Doki-Meter!")
+            ).to(_progress_doki)
+        )
+    )
+
+
+@card(978)
+class PinksGhost(Monster):
+    @on_event(AttackDeclaredResult)
+    def on_attack_declared(self, res: AttackDeclaredResult, game, **kwargs):
+        if res.attacker.id != self.id:
+            return None
+
+        defender = game.entity(res.defender_id)
+        if not isinstance(defender, Monster):
+            return None
+
+        halve_stats = defender.actions.halve_stats(round_up=False)
+
+        if defender.template.rarity is CardRarity.DETERMINATION:
+            return halve_stats
+
+        return halve_stats.to(
+            (
+                RESOLVE_ENTITY(res.defender_id)
+                >> EXACT_COPY()
+            ).to_hand()
+        )
+
+
+@card(983)
+class OurOMEGA(Spell):
+    chosen_card: Var[Card] = Var(Card)
+
+    magic = YOU.choose(
+        (
+            CARD_BY_NAME("Aqua")
+            | CARD_BY_NAME("Seth")
+            | CARD_BY_NAME("Green")
+            | CARD_BY_NAME("Yellow")
+            | CARD_BY_NAME("Blue")
+            | CARD_BY_NAME("Orange")
+        ) >> GENERATE_CARD()
+    ).to(
+        SetVar(var=chosen_card, value=CHOICE_SELECTED)
+        >> chosen_card.to_hand()
+        >> SELF.schedule_delay_effect()
+    )
+
+    delay = (chosen_card & HAND).to_deck()

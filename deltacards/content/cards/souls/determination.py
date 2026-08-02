@@ -138,7 +138,7 @@ class SoulDrain(Spell):
     )
 
     delay = (LOOP_COPY & HAND).erase().to(
-        YOU.heal(3)
+        YOU.heal(4)
     )
 
 
