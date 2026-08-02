@@ -1364,6 +1364,8 @@ class Game:
                 group_id=pending.log_group_id,
                 parent_id=pending.log_parent_id,
                 depth=pending.log_depth,
+                source_id=pending.source.id,
+                affected_ids=tuple(entity.id for entity in (res.affected or ())),
             )
         )
 
@@ -1376,6 +1378,7 @@ class Game:
             assert not res.action_calls
 
             req = res.pending_request
+            req.source_id = pending.source.id
             self.pending_requests[req.request_id] = req
             return list(res.results)
 

@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 
 from deltacards.actions.results import ActionResult
 from deltacards.actions.standard import (
@@ -70,7 +71,10 @@ class EngineUpdate:
     results: list[ActionResult]
     pending: tuple[PendingRequest, ...]
     game_over: bool
-    log_records: list[ActionLogRecord] | None = None
+    log_records: list[ActionLogRecord] = field(default_factory=list)
+
+
+StepListener = Callable[[EngineUpdate], None]
 
 
 class GameRunner:
@@ -283,10 +287,19 @@ class GameRunner:
         self.game.pending_requests[req.request_id] = req
         return EngineUpdate(results=[], pending=self._pending_sorted(), game_over=False)
 
-    def resolve_until_blocked(self, step_limit: int = MAX_STEPS) -> EngineUpdate:
+    def resolve_until_blocked(
+        self,
+        step_limit: int = MAX_STEPS,
+        *,
+        step_listener: StepListener | None = None,
+    ) -> EngineUpdate:
         """
         Resolve until blocked (pending requests exist) or game ends.
         Returns a single batch containing all results that were emitted.
+
+        A synchronous step listener may serialize or inspect the state after
+        each completed engine step and before the next one is resolved. It
+        must not mutate the game, enqueue anything, or wait for external input.
         """
         results = []
         log_records = []
@@ -295,6 +308,9 @@ class GameRunner:
         while not self.game.game_over and steps < step_limit:
             upd = self.step()
             steps += 1
+
+            if step_listener is not None:
+                step_listener(upd)
 
             if upd.results:
                 results.extend(upd.results)

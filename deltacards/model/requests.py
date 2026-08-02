@@ -10,6 +10,7 @@ class PendingRequest:
     request_id: int
     player_id: PlayerId
     request_type: str
+    source_id: PlayerId | int | None = field(init=False, default=None)
 
 
 @dataclass

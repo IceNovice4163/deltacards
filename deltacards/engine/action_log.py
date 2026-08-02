@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from deltacards.actions.results import ActionResult
+from deltacards.model.enums import PlayerId
 
 
 @dataclass(slots=True)
@@ -13,3 +14,6 @@ class ActionLogRecord:
     group_id: int
     parent_id: int | None
     depth: int
+
+    source_id: PlayerId | int | None = None
+    affected_ids: tuple[PlayerId | int, ...] = ()

@@ -1,7 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from deltacards.engine.runner import EngineUpdate, GameRunner
+from deltacards.engine.runner import (
+    EngineUpdate,
+    GameRunner,
+    StepListener,
+)
 from deltacards.model.enums import PlayerId
 from deltacards.model.requests import EngineInput, PendingRequest
 
@@ -21,31 +25,25 @@ class AIGameController:
         self,
         *,
         max_ai_inputs: int = 1_000,
+        step_listener: StepListener | None = None,
     ) -> EngineUpdate:
         all_results = []
         all_log_records = []
 
         for _ in range(max_ai_inputs):
-            update = self.runner.resolve_until_blocked()
-            if update.results is not None:
-                all_results.extend(update.results)
-            if update.log_records is not None:
-                all_log_records.extend(update.log_records)
+            update = self.runner.resolve_until_blocked(
+                step_listener=step_listener,
+            )
+            all_results.extend(update.results)
+            all_log_records.extend(update.log_records)
 
-            if update.game_over:
-                return EngineUpdate(
-                    results=all_results,
-                    pending=update.pending,
-                    game_over=update.game_over,
-                    log_records=all_log_records,
+            if (
+                update.game_over
+                or any(
+                    request.player_id not in self.agents
+                    for request in update.pending
                 )
-
-            unhandled_requests = [
-                request for request in update.pending
-                if request.player_id not in self.agents
-            ]
-
-            if unhandled_requests:
+            ):
                 return EngineUpdate(
                     results=all_results,
                     pending=update.pending,

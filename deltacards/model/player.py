@@ -61,11 +61,14 @@ class Player(Entity):
     def controller_id(self) -> PlayerId:
         return self.id
 
-    def increase_gold(self, turn: int) -> None:
+    def gold_gain(self, turn: int) -> int:
         try:
-            self.gold += GOLD_GAINS[int(not self.is_first_turn)][turn - 1]
+            return GOLD_GAINS[int(not self.is_first_turn)][turn - 1]
         except IndexError:
-            self.gold += 10
+            return 10
+
+    def increase_gold(self, turn: int) -> None:
+        self.gold += self.gold_gain(turn)
 
     def heal(self, amount: int) -> int:
         old_hp = self.hp
