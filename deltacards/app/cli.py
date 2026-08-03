@@ -521,13 +521,17 @@ class CLIRunner:
                         continue
 
                     seen_card_ids.append(action.card_id)
-                    action_cmd, desc = f"play {action.card_id}", f"Play {self.game.entity(action.card_id)}"
+                    action_cmd, desc = (
+                        f"play {action.card_id}",
+                        f"Play {self._entity_to_str(self.game.entity(action.card_id))}"
+                    )
 
                 elif isinstance(action, Attack):
                     defender_name = "op" if action.defender_id is self.game.player(player_id).opponent.id else action.defender_id
                     action_cmd, desc = (
                         f"attack {action.attacker_id} {defender_name}",
-                        f"Attack {self.game.entity(action.attacker_id)} -> {self.game.entity(action.defender_id)}"
+                        f"Attack {self._entity_to_str(self.game.entity(action.attacker_id))} -> "
+                        f"{self._entity_to_str(self.game.entity(action.defender_id))}"
                     )
 
                 elif isinstance(action, EndTurn):
