@@ -516,7 +516,7 @@ class Spamequin(Monster):
     generated_card: Var[Card] = Var(Card)
 
     _effect = (
-        SetVar(var=generated_card, value=GENERATE_CARD("Ms Pipis"))
+        SetVar(var=generated_card, value=GENERATE_CARD("Pipis"))
         >> generated_card.add_keyword(HASTE)
         >> generated_card.to_hand()
     )
