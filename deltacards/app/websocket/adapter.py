@@ -279,13 +279,17 @@ class FrontendAdapter:
             return {
                 'action': 'getPlayableCards',
                 'playableCards': json_text([]),
+                'playableNoTargets': json_text([]),
                 'playableTriggers': json_text([]),
                 'availableAttackTargets': json_text({}),
             }
 
         playable_cards: list[int] = []
         playable_triggers: list[int] = []
+        playable_no_targets: list[int] = []
         available_attack_targets: dict[str, list[int]] = {}
+
+        viewer = self.game.player(viewer_id)
 
         for action in self.runner.legal_player_actions(viewer_id):
             if isinstance(action, (PlayMonster, PlaySpell)):
@@ -293,12 +297,25 @@ class FrontendAdapter:
                     playable_cards.append(action.card_id)
 
                 card = self.game.card(action.card_id)
+
                 if (
                     card.has_need_condition()
                     and self.game.card_need_fulfilled(card)
                     and (card.id not in playable_triggers)
                 ):
                     playable_triggers.append(card.id)
+
+                if (
+                    isinstance(action, PlayMonster)
+                    and card.targets is not None
+                    and not self.game.play_target_options(
+                        card=card,
+                        player=viewer,
+                        pos=action.board_slot,
+                    )
+                    and card.id not in playable_no_targets
+                ):
+                    playable_no_targets.append(card.id)
 
             elif isinstance(action, Attack):
                 if action.attacker_id not in playable_cards:
@@ -319,6 +336,7 @@ class FrontendAdapter:
         return {
             'action': 'getPlayableCards',
             'playableCards': json_text(playable_cards),
+            'playableNoTargets': json_text(playable_no_targets),
             'playableTriggers': json_text(playable_triggers),
             'availableAttackTargets': json_text(available_attack_targets),
         }
