@@ -1701,7 +1701,7 @@ class Game:
                     else None
                 )
                 assert slot.monster_id == expected_monster_id, (
-                    f"P{player.id.value} slot {pos}: "
+                    f"P{player.id.value} slot {pos + 1}: "
                     f"slot.monster_id={slot.monster_id}, "
                     f"board monster={expected_monster_id}"
                 )
