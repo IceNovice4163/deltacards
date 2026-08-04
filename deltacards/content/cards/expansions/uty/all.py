@@ -6,7 +6,7 @@ class Clover(Monster):
     magic = GENERATE_CARD("The First Round").to_hand()
 
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         yield IntModifier(
@@ -265,7 +265,7 @@ class Icemeter(Monster):
 @card(840)
 class Bowll(Monster):
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         yield IntModifier(
@@ -540,7 +540,7 @@ class GoldenMirror(Monster):
     )
 
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         yield IntModifier(

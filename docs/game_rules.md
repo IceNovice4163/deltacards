@@ -512,11 +512,11 @@ If effect text says "release a card" but doesn't specify controller of the newly
 
 ## Ordering of reactions and multi-target effects
 When several entities react to the same event, sources are ordered as follows:
-1. the current turn player's Monsters, from left to right;
+1. the current turn player's non-Silenced Monsters, from left to right;
 2. the current turn player's Enchantments, from left to right;
 3. the current turn player's Soul;
 4. the current turn player's enabled Artifacts, in equip order;
-5. the other player's Monsters, from left to right;
+5. the other player's non-Silenced Monsters, from left to right;
 6. the other player's Enchantments, from left to right;
 7. the other player's Soul;
 8. the other player's enabled Artifacts, in equip order.

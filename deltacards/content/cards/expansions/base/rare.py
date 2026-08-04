@@ -119,7 +119,7 @@ class BigBob(Monster):
 @card(145)
 class DiamondBoy1(Monster):
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         def applies(q: DamageQuery) -> bool:
@@ -145,7 +145,7 @@ class DiamondBoy1(Monster):
 @card(146)
 class DiamondBoy2(Monster):
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         opponent = game.player(self.controller_id).opponent

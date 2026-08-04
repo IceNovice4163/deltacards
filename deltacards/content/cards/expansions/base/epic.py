@@ -14,7 +14,7 @@ class Napstablook(Monster):
 @card(56)
 class Mettaton(Monster):
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         yield IntModifier(
@@ -222,7 +222,7 @@ class DateAlphys(Monster):
 @card(526)
 class PlatedPipe(Monster):
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         yield IntModifier(
@@ -465,7 +465,7 @@ class StrangeMachine(Monster):
     )
 
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         yield IntModifier(

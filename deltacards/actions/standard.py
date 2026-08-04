@@ -1618,7 +1618,10 @@ class CombatDamage(Action):
                 'damage_to_defender': res.damage,
                 'attacker_dead': False,
                 'defender_dead': res.killed,
+                'attacker_snapshot': attacker.to_snapshot(),
+                'defender_snapshot': defender.to_snapshot(),
             })
+
             return ActionOutcome(
                 success=True,
                 results=res.results,
@@ -1652,7 +1655,10 @@ class CombatDamage(Action):
             'damage_to_defender': attacker_res.damage,
             'attacker_dead': defender_res.killed,
             'defender_dead': attacker_res.killed,
+            'attacker_snapshot': attacker.to_snapshot(),
+            'defender_snapshot': defender.to_snapshot(),
         })
+
         return ActionOutcome(
             success=True,
             results=[*attacker_res.results, *defender_res.results],
@@ -1682,9 +1688,9 @@ class AttackAftermath(Action):
                 AttackResolvedResult(
                     source_id=ctx.source.id,
                     attacker_id=attacker.id,
-                    attacker=attacker.to_snapshot(),
+                    attacker=ctx.env['combat_result']['attacker_snapshot'],
                     defender_id=defender.id,
-                    defender=defender.to_snapshot(),
+                    defender=ctx.env['combat_result']['defender_snapshot'],
                     damage_to_attacker=ctx.env['combat_result']['damage_to_attacker'],
                     damage_to_defender=ctx.env['combat_result']['damage_to_defender'],
                     attacker_dead=ctx.env['combat_result']['attacker_dead'],

@@ -504,7 +504,7 @@ class Susiezilla(Monster):
     magic = SELF.force_attack(ENEMY_MONSTERS)
 
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.HAND) or self.silenced:
+        if self.zone is not CardZone.HAND:
             return
 
         played_count = sum(

@@ -384,7 +384,7 @@ class Tasque(Monster):
 @card(632)
 class Trashy(Monster):
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         yield IntModifier(
@@ -830,7 +830,7 @@ class Shinobeetle(Monster):
     )
 
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         def other_ally_count() -> int:
@@ -889,7 +889,7 @@ class MrButterfly(Monster):
 @card(985)
 class GiantShrubbery(Monster):
     def iter_modifiers(self, game):
-        if (self.zone is not CardZone.BOARD) or self.silenced:
+        if self.zone is not CardZone.BOARD:
             return
 
         def is_adjacent_plant(monster: Monster) -> bool:
