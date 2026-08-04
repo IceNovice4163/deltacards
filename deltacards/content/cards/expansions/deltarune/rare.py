@@ -776,7 +776,7 @@ class Wicabel(Monster):
 
     delay = Check(SELF.hp == SELF.attack).to(
         SELF.buff(attack=+2)
-        >> SELF.heal(SELF.max_hp - SELF.hp)
+        >> SELF.heal(SELF.max_hp)
     )
 
 

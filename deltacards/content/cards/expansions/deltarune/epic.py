@@ -780,7 +780,7 @@ class RockstarSusie(Monster):
     )
 
     support = (
-        SELF.heal(SELF.max_hp - SELF.hp)
+        SELF.heal(SELF.max_hp)
         >> SELF.toggle_ability(SHOCK, True)
     )
 

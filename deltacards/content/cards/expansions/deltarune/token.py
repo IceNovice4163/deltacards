@@ -274,7 +274,7 @@ class Snowgrave(Spell):
     generated_card: Var[Card] = Var(Card)
 
     magic = Check(
-        COUNT(SPELLS_CAST(player=YOU) & (TEMPLATE_ID == SELF.template_id)) == 1
+        COUNT(SPELLS_CAST(player=YOU) & (TEMPLATE_ID == SELF.template_id)) == 0
     ).to(
         SetVar(var=target_attack, value=TARGET.attack)
         >> SetVar(var=target_hp, value=TARGET.hp)

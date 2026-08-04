@@ -392,7 +392,6 @@ class DeflatedMascot(Monster):
     turn_end = YOU.earn_gold(1)
 
 
-
 @card(405)
 class Telescope(Monster):
     _effect = GENERATE_CARD("Scope").to_hand()
@@ -684,7 +683,6 @@ class FoxBodyguard(Monster):
     dust = GENERATE_CARD("Fox Head").summon().store_result(summon_result).to(
         TriggerAbility(target=summon_result.monster_id, ability=MAGIC)
     )
-
 
 
 @card(587)

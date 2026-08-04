@@ -73,7 +73,7 @@ class Asriel(Monster):
         var=monster,
         effect=(
             monster.remove_negative_effects()
-            >> monster.heal(monster.max_hp - monster.hp)
+            >> monster.heal(monster.max_hp)
         )
     )
 

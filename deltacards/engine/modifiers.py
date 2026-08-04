@@ -150,7 +150,8 @@ class RulesEngine:
             yield player.soul
 
             for artifact in player.artifacts:
-                yield artifact
+                if artifact.active:
+                    yield artifact
 
     def iter_modifiers(self) -> Iterable[IntModifier]:
         for src in self.iter_modifier_sources():

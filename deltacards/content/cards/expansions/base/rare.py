@@ -67,7 +67,6 @@ class GladDummy(Monster):
     magic = ADJACENT(SELF).add_keyword(TAUNT)
 
 
-
 @card(126)
 class PapyrusStatue(Monster):
     magic = Check(COUNT(HAND) >= 5).to(
@@ -653,7 +652,6 @@ class Totem(Monster):
     )
 
 
-
 @card(547)
 class MagicLantern(Monster):
     targets = ALLIES | ENEMIES
@@ -792,12 +790,11 @@ class RiverBoat(Monster):
     )
 
 
-
 @card(610)
 class Trophy(Monster):
     dust = (
-        YOU.add_artifact(ARTIFACT_BY_NAME("Trophy"))
-        >> YOU.artifact("Trophy").update_artifact_counter(+3)
+        YOU.add_artifact(ARTIFACT_BY_NAME("Economics"))
+        >> YOU.artifact("Economics").update_artifact_counter(+3)
     )
 
 

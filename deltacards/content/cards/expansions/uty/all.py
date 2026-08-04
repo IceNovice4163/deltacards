@@ -220,7 +220,7 @@ class Gamer(Monster):
 
 @card(834)
 class Drinki(Monster):
-    bullseye = SELF.heal(SELF.max_hp - SELF.hp)
+    bullseye = SELF.heal(SELF.max_hp)
 
 
 @card(835)
@@ -239,7 +239,7 @@ class FoodEnjoyer(Monster):
 
     delay = Check(chosen_card & HAND).to(
         chosen_card.erase().to(
-            SELF.heal(SELF.max_hp - SELF.hp)
+            SELF.heal(SELF.max_hp)
         )
     )
 
@@ -444,7 +444,7 @@ class Pancakes(Monster):
 
     heal_result: Var[StepResult] = Var(StepResult)
 
-    magic = TARGET.heal(TARGET.max_hp - TARGET.hp).store_result(heal_result).to(
+    magic = TARGET.heal(TARGET.max_hp).store_result(heal_result).to(
         YOU.heal(heal_result.amount)
     )
 

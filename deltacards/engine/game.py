@@ -14,6 +14,7 @@ from deltacards.actions.base import (
 from deltacards.actions.results import (
     ActionResult,
     AttackResolvedResult,
+    CardPlayedResult,
     DodgeConsumedResult,
     EntityDamagedResult,
     MonsterSummonedResult,
@@ -833,8 +834,11 @@ class Game:
                 event_sources.append(defender)
 
         for entity in event_sources:
-            # Monster shouldn't receive `MonsterSummonedResult` event on its own summon
-            if isinstance(res, MonsterSummonedResult) and entity.id == res.monster_id:
+            # Monster shouldn't receive `MonsterSummonedResult` and `CardPlayedResult` events on its own summon
+            if (
+                (isinstance(res, MonsterSummonedResult) and entity.id == res.monster_id)
+                or (isinstance(res, CardPlayedResult) and entity.id == res.card_id)
+            ):
                 continue
 
             event_handlers = entity.post_event_handlers
@@ -1366,6 +1370,11 @@ class Game:
                 depth=pending.log_depth,
                 source_id=pending.source.id,
                 affected_ids=tuple(entity.id for entity in (res.affected or ())),
+                presentation_results=(
+                    tuple(res.presentation_results)
+                    if res.presentation_results is not None
+                    else None
+                ),
             )
         )
 
