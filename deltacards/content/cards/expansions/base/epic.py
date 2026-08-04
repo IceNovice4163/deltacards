@@ -179,6 +179,7 @@ class Bookshelf(Monster):
         (
             CARD_LIBRARY
             & IS_SPELL
+            & NON_TOKEN
             & (CARD_SOUL == PLAYER_SOUL(player=YOU))
         ) >> GENERATE_CARD()
     ).to(
