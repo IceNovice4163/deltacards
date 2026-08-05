@@ -288,7 +288,7 @@ class StuffedDoll(Monster):
     enemy_card: Var[Card] = Var(Card)
 
     magic = YOU.choose(
-        (CARD_LIBRARY & IS_MONSTER & NON_TOKEN) >> RANDOM(5) >> GENERATE_CARD()
+        DISCOVER(IS_MONSTER, NON_TOKEN, n=5)
     ).to(
         SetVar(var=your_card, value=CHOICE_SELECTED)
         >> SetVar(var=enemy_card, value=CHOICE_SELECTED >> COPY(controller=OPPONENT))
@@ -490,10 +490,10 @@ class AmbyuLance(Monster):
 
 @card(657)
 class Iconman(Monster):
-    magic = YOU.choose(HAND).to(
-        CHOICE_SELECTED.erase().to(
-            GENERATE_CARD("Recruitment").to_hand() * 2
-        )
+    targets = HAND
+
+    magic = TARGET.erase().to(
+        GENERATE_CARD("Recruitment").to_hand() * 2
     )
 
 

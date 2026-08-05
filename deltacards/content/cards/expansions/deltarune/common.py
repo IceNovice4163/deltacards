@@ -34,9 +34,11 @@ class Starwalker(Monster):
         & ((RARITY == RARE) | (RARITY == EPIC))
     )
 
-    magic = YOU.choose(HAND).to(
-        CHOICE_SELECTED.buff(cost=-4)
-        >> CHOICE_SELECTED.to_deck()
+    targets = HAND
+
+    magic = (
+        TARGET.buff(cost=-4)
+        >> TARGET.to_deck()
     )
 
 
@@ -449,10 +451,9 @@ class DogCone(Monster):
 
 @card(640)
 class AestheticAaron(Monster):
-    magic = YOU.choose(HAND).to(
-        CHOICE_SELECTED.to_hand(controller=OPPONENT).to(
-            YOU.draw_next()
-        )
+    targets = HAND
+    magic = TARGET.to_hand(controller=OPPONENT).to(
+        YOU.draw_next()
     )
 
 
@@ -518,11 +519,11 @@ class EggplantTrashbag(Monster):
     generated_card: Var[Card] = Var(Card)
 
     magic = YOU.choose(
-        (
-            CARD_LIBRARY
-            & IS_SPELL
-            & (RARITY == BASE)
-        ) >> RANDOM(4) >> GENERATE_CARD()
+        DISCOVER(
+            IS_SPELL,
+            (RARITY == BASE),
+            n=4
+        )
     ).to(
         SetVar(var=generated_card, value=CHOICE_SELECTED)
         >> SELF.schedule_delay_effect()

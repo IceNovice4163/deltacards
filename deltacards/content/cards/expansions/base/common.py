@@ -293,9 +293,9 @@ class Mace(Monster):
 
 @card(226)
 class Microwave(Monster):
-    magic = YOU.choose(HAND).to(
-        CHOICE_SELECTED.erase()
-    )
+    targets = HAND
+
+    magic = TARGET.erase()
 
 
 @card(236)
@@ -463,9 +463,7 @@ class ChaosBlaster(Monster):
     magic = (
         YOU.hit(5)
         >> YOU.choose(
-            (CARD_LIBRARY & HAS_TRIBE(Tribe.LOST_SOUL))
-            >> RANDOM(2)
-            >> GENERATE_CARD()
+            DISCOVER(HAS_TRIBE(Tribe.LOST_SOUL), ~HAS_TRIBE(Tribe.ALL), n=2)
         ).to(
             CHOICE_SELECTED.buff(cost=+1, attack=+1, hp=+1)
             >> CHOICE_SELECTED.add_keyword(HASTE)
