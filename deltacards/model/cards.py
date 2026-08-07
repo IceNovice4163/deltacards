@@ -286,29 +286,24 @@ class Card(Entity, Generic[TTemplate]):
             raise ValueError(f"Template ID mismatch: {self.template.id} != {other.template.id}")
 
         self.base = replace(other.base)
-        self.keywords = other.keywords
+        self.keywords = other.keywords & ~CardKeyword.HASTE  # exact copies don't copy Haste
         self.statuses = other.statuses.copy()
         self.active_abilities = other.active_abilities.copy()
         self.buffs = replace(other.buffs)
         self.caught_card = replace(other.caught_card) if other.caught_card is not None else None
 
-    def get_exact_copy_attrs(self) -> dict:
+    def get_snapshot_attrs(self) -> dict:
         return dict(
+            id=self.id,
             type=self.type,
             template=self.template,
             controller_id=self.controller_id,
             base=replace(self.base),
-            keywords=self.keywords & ~CardKeyword.HASTE,  # exact copies don't copy Haste
+            keywords=self.keywords,
             statuses=self.statuses.copy(),
             active_abilities=self.active_abilities.copy(),
             buffs=replace(self.buffs),
             caught_card=replace(self.caught_card) if self.caught_card is not None else None,
-        )
-
-    def get_snapshot_attrs(self) -> dict:
-        return dict(
-            **self.get_exact_copy_attrs(),
-            id=self.id,
             zone=self.zone,
             creator_id=self.creator_id,
             creator_base_identity=self.creator_base_identity,
@@ -543,14 +538,6 @@ class Monster(Card[MonsterTemplate]):
         self.has_attacked = other.has_attacked
         self.hp_missing = other.hp_missing
 
-    def get_exact_copy_attrs(self) -> dict:
-        return dict(
-            **super().get_exact_copy_attrs(),
-            age=self.age,
-            has_attacked=self.has_attacked,
-            hp_missing=self.hp_missing,
-        )
-
     def get_snapshot_attrs(self) -> dict:
         if self._zone is CardZone.BOARD:
             slot_id = self.game.board_slot(self.controller_id, self.pos).id
@@ -559,8 +546,11 @@ class Monster(Card[MonsterTemplate]):
 
         return dict(
             **super().get_snapshot_attrs(),
-            slot_id=slot_id,
+            age=self.age,
             pos=self.pos,
+            has_attacked=self.has_attacked,
+            hp_missing=self.hp_missing,
+            slot_id=slot_id,
             attack=self.attack,
             hp=self.hp,
             max_hp=self.max_hp,
