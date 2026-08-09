@@ -16,7 +16,7 @@ class HealCard(Spell):
 
 @card(92)
 class ForceOfNature(Spell):
-    targets = ENEMIES
+    targets = ALLIES | ENEMIES
 
     hit_result: Var[StepResult] = Var(StepResult)
 

@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         deltacards Bridge
-// @version      0.2.0
+// @version      0.2.1
 // @description  Connects the Undercards web client to a local deltacards engine instance for offline play and testing.
 // @author       rashidsh
 // @homepageURL  https://github.com/rashidsh/deltacards
@@ -276,13 +276,11 @@
       const enchantment
       of customContent.enchantments
     ) {
-      const assetName = enchantment.assetName || enchantment.name;
-
       registerAssetReplacement(
         `/images/enchants/backgrounds/${enchantment.name}.png`,
         replacementAssetUrl(
           enchantment.backgroundUrl,
-          `/images/enchants/backgrounds/${assetName}.png`
+          `/images/enchants/backgrounds/${enchantment.name}.png`
         )
       );
 
@@ -290,7 +288,7 @@
         `/images/enchants/overlays/${enchantment.name}.png`,
         replacementAssetUrl(
           enchantment.overlayUrl,
-          `/images/enchants/overlays/${assetName}.png`
+          `/images/enchants/overlays/${enchantment.name}.png`
         )
       );
 
@@ -298,19 +296,17 @@
         `/images/enchants/logs/${enchantment.name}.png`,
         replacementAssetUrl(
           enchantment.logUrl,
-          `/images/enchants/logs/${assetName}.png`
+          `/images/enchants/logs/${enchantment.name}.png`
         )
       );
     }
 
     for (const soul of customContent.souls) {
-      const assetName = soul.assetName || soul.name;
-
       registerAssetReplacement(
         `/images/souls/${soul.name}.png`,
         replacementAssetUrl(
           soul.imageUrl,
-          `/images/souls/${assetName}.png`
+          `/images/souls/${soul.name}.png`
         )
       );
     }
