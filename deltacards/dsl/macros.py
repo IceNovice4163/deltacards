@@ -32,14 +32,11 @@ def SwitchPiece(left, right):
     )
 
 
-def DrawUpTo(
-    count: int,
-    group: TargetSelector = DECK,
-):
+def DrawUpTo(count: int):
     return For(
         count,
-        effect=Check((COUNT(HAND) < MAX_HAND_SIZE) & (COUNT(DECK & group) > 0)).to(
-            YOU.draw((DECK & group).first())
+        effect=Check((COUNT(HAND) < MAX_HAND_SIZE) & (COUNT(DECK) > 0)).to(
+            YOU.draw_next()
         )
     )
 
