@@ -17,7 +17,6 @@ __all__ = (
     'CardRevealedResult',
     'CardDrawnResult',
     'CardOverdrawnResult',
-    'EntityBuffedResult',
     'EntityDamagedResult',
     'EntityHealedResult',
     'DodgeConsumedResult',
@@ -148,19 +147,6 @@ class EntityDamagedResult(ActionResult):
     killed: bool
     excess_damage: int
     kind: DamageKind
-
-
-@dataclass(slots=True, kw_only=True)
-class EntityBuffedResult(ActionResult):
-    history_subject_attr: ClassVar[str | None] = 'target'
-    history_target_id_attr: ClassVar[str | None] = 'target_id'
-
-    target_id: PlayerId | int
-    target: MonsterSnapshot | PlayerSnapshot
-    cost_amount: int = 0
-    attack_amount: int = 0
-    hp_amount: int = 0
-    killed: bool = False
 
 
 @dataclass(slots=True, kw_only=True)
