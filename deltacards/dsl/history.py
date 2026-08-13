@@ -7,6 +7,7 @@ from deltacards.actions.results import (
     AttackResolvedResult,
     AbilityTriggeredResult,
     ActionResult,
+    EntityBuffedResult,
     CardDrawnResult,
     CardPlayedResult,
     EntityHealedResult,
@@ -440,6 +441,50 @@ def HEALING_DONE(
     )
 
 
+def DAMAGE_DONE(
+    *,
+    controller: Any | None = None,
+    scope: HistoryScope = THIS_GAME,
+    target: Any | None = None,
+) -> HistorySelector:
+    return HistorySelector(
+        EntityDamagedResult,
+        controller=controller,
+        scope=scope,
+        target=target,
+    )
+
+
+def DAMAGE_DEALT_AMOUNT(
+    *,
+    controller: Any | None = YOU,
+    scope: HistoryScope = THIS_GAME,
+    target: Any | None = None,
+) -> ValueExpr:
+    return SUM(
+        DAMAGE_DONE(
+            controller=controller,
+            scope=scope,
+            target=target,
+        ),
+        AMOUNT,
+    )
+
+
+def BUFFS_GIVEN(
+    *,
+    controller: Any | None = None,
+    scope: HistoryScope = THIS_GAME,
+    target: Any | None = None,
+) -> HistorySelector:
+    return HistorySelector(
+        EntityBuffedResult,
+        controller=controller,
+        scope=scope,
+        target=target,
+    )
+
+
 def GOLD_SPENT(
     player: Any | None = YOU,
     *,
@@ -520,6 +565,7 @@ REASON = HistoryAttrValue('reason')
 
 ATTACKER_ID = HistoryAttrValue('attacker_id')
 DEFENDER_ID = HistoryAttrValue('defender_id')
+TARGET_ID = HistoryAttrValue('target_id')
 
 KILL_CAUSE = HistoryAttrValue('cause')
 
