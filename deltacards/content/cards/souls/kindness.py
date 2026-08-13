@@ -3,7 +3,7 @@ from deltacards.dsl.api import *
 
 @card(91)
 class HealCard(Spell):
-    targets = ALLIES
+    targets = ALLIES | ENEMIES
 
     magic = (
         TARGET.heal(3)
