@@ -428,7 +428,7 @@ def perform_card_draw(player: 'Player', card: 'Card', reason: str, *, ctx: 'Acti
     if len(player.hand) >= 7:
         return ActionOutcome(
             success=True,
-            action_calls=[ActionCall(Overdraw(player=player, card=card), source=ctx.source), *action_calls],
+            action_calls=[*action_calls, ActionCall(Overdraw(player=player, card=card), source=ctx.source)],
         )
 
     ctx.game.move_card(card, controller_id=player.id, zone=CardZone.HAND)

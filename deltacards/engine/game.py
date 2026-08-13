@@ -1329,6 +1329,8 @@ class Game:
         if not isinstance(res, ActionOutcome):
             raise TypeError(f'{type(action).__name__}.execute() must return ActionOutcome, got {type(res).__name__}')
 
+        self.rules.invalidate()
+
         action_log_id = self.alloc_action_log_id()
         self.action_log.append(
             ActionLogRecord(
