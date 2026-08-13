@@ -367,7 +367,6 @@ class Buff(Action):
             return ActionOutcome(success=False)
 
         action_calls = []
-        results = []
 
         if isinstance(target, Card) and target.zone not in CARD_EDITABLE_ZONES:
             return ActionOutcome(success=False)
@@ -385,36 +384,9 @@ class Buff(Action):
                         source=ctx.source,
                     )
                 )
-                results.append(
-                    EntityBuffedResult(
-                        target_id=target.id,
-                        target=target,
-                        cost_amount=cost,
-                        attack_amount=attack,
-                        hp_amount=hp,
-                        killed=True,
-                    )
-                )
-            else:
-                results.append(
-                    EntityBuffedResult(
-                        target_id=target.id,
-                        target=target,
-                        cost_amount=cost,
-                        attack_amount=attack,
-                        hp_amount=hp,
-                    )
-                )
 
         elif isinstance(target, Spell):
             target.buff(cost)
-            results.append(
-                EntityBuffedResult(
-                    target_id=target.id,
-                    target=target,
-                    cost_amount=cost,
-                )
-            )
 
         elif isinstance(target, Player):
             assert cost == 0 and attack == 0
@@ -431,26 +403,9 @@ class Buff(Action):
                         source=ctx.source,
                     )
                 )
-                results.append(
-                    EntityBuffedResult(
-                        target_id=target.id,
-                        target=target,
-                        hp_amount=hp,
-                        killed=True,
-                    )
-                )
-            else:
-                results.append(
-                    EntityBuffedResult(
-                        target_id=target.id,
-                        target=target,
-                        hp_amount=hp,
-                    )
-                )
 
         return ActionOutcome(
             success=True,
-            results=results,
             affected=[target],
             action_calls=action_calls,
         )
@@ -719,28 +674,15 @@ class SetStats(Action):
             return ActionOutcome(success=False)
 
         action_calls = []
-        results = []
-        attack_change = 0
-        hp_change = 0
-        cost_change = 0
 
         if attack is not None:
             assert isinstance(target, Monster)
-            attack_change = attack - (target.base.attack + target.buffs.attack)
-            target.buff(attack=attack_change)
-            results.append(
-                EntityBuffedResult(
-                    target_id=target.id,
-                    target=target,
-                    attack_amount=attack_change,
-                )
-            )
+            target.buff(attack=attack - (target.base.attack + target.buffs.attack))
 
         if hp is not None:
             assert isinstance(target, Monster)
             target.hp_missing = 0
-            hp_change = hp - (target.base.hp + target.buffs.max_hp)
-            target.buff(hp=hp_change)
+            target.buff(hp=hp - (target.base.hp + target.buffs.max_hp))
 
             if target.hp <= 0 and target.zone is CardZone.BOARD:
                 action_calls.append(
@@ -753,37 +695,12 @@ class SetStats(Action):
                         source=ctx.source,
                     )
                 )
-                results.append(
-                    EntityBuffedResult(
-                        target_id=target.id,
-                        target=target,
-                        hp_amount=hp_change,
-                        killed=True,
-                    )
-                )
-            else:
-                results.append(
-                    EntityBuffedResult(
-                        target_id=target.id,
-                        target=target,
-                        hp_amount=hp_change,
-                    )
-                )
 
         if cost is not None:
-            cost_change = cost - (target.base.cost + target.buffs.cost)
-            target.buff(cost=cost_change)
-            results.append(
-                EntityBuffedResult(
-                    target_id=target.id,
-                    target=target,
-                    cost_amount=cost_change,
-                )
-            )
+            target.buff(cost=cost - (target.base.cost + target.buffs.cost))
 
         return ActionOutcome(
             success=True,
-            results=results,
             affected=[target],
             action_calls=action_calls,
         )
@@ -849,10 +766,7 @@ class SwapStats(Action):
             return ActionOutcome(success=False)
 
         action_calls = []
-        results = []
-        attack_change = target.hp - target.attack
-        hp_change = target.attack - target.hp
-        target.buff(attack=attack_change, hp=hp_change)
+        target.buff(attack=target.hp - target.attack, hp=target.attack - target.hp)
 
         if target.hp <= 0 and target.zone is CardZone.BOARD:
             action_calls.append(
@@ -865,28 +779,9 @@ class SwapStats(Action):
                     source=ctx.source,
                 )
             )
-            results.append(
-                EntityBuffedResult(
-                    target_id=target.id,
-                    target=target,
-                    attack_amount=attack_change,
-                    hp_amount=hp_change,
-                    killed=True,
-                )
-            )
-        else:
-            results.append(
-                EntityBuffedResult(
-                    target_id=target.id,
-                    target=target,
-                    attack_amount=attack_change,
-                    hp_amount=hp_change,
-                )
-            )
 
         return ActionOutcome(
             success=True,
-            results=results,
             affected=[target],
             action_calls=action_calls,
         )
@@ -904,12 +799,9 @@ class HalveStats(Action):
             return ActionOutcome(success=False)
 
         action_calls = []
-        results = []
 
         round_func = math.floor if round_up else math.ceil  # negative stat buffs are inverted
-        attack_change = -round_func(target.attack / 2)
-        hp_change = -round_func(target.hp / 2)
-        target.buff(attack=attack_change, hp=hp_change)
+        target.buff(attack=-round_func(target.attack / 2), hp=-round_func(target.hp / 2))
 
         if target.hp <= 0 and target.zone is CardZone.BOARD:
             action_calls.append(
@@ -922,28 +814,9 @@ class HalveStats(Action):
                     source=ctx.source,
                 )
             )
-            results.append(
-                EntityBuffedResult(
-                    target_id=target.id,
-                    target=target,
-                    attack_amount=attack_change,
-                    hp_amount=hp_change,
-                    killed=True,
-                )
-            )
-        else:
-            results.append(
-                EntityBuffedResult(
-                    target_id=target.id,
-                    target=target,
-                    attack_amount=attack_change,
-                    hp_amount=hp_change,
-                )
-            )
 
         return ActionOutcome(
             success=True,
-            results=results,
             affected=[target],
             action_calls=action_calls,
         )
