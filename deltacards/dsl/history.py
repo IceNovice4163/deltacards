@@ -520,7 +520,6 @@ REASON = HistoryAttrValue('reason')
 
 ATTACKER_ID = HistoryAttrValue('attacker_id')
 DEFENDER_ID = HistoryAttrValue('defender_id')
-TARGET_ID = HistoryAttrValue('target_id')
 
 KILL_CAUSE = HistoryAttrValue('cause')
 
