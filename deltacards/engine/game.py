@@ -793,6 +793,11 @@ class Game:
         for card in player.board.cards:
             if not card.silenced:
                 yield card
+        
+        for card in player.hand.cards:
+            if not card.silenced:
+                if card.template.works_in_hand:
+                    yield card
 
         if board_only:
             return
