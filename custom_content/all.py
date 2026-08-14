@@ -191,6 +191,7 @@ class QuizVortex(Monster):
     description="Starts with 3 counters. After you play a monster here and have 0 {{GOLD}}, give it {{STATS:+1|+1}} and lose a counter. At 0 counters, draw 2 cards and this effect expires.",
     image=ExistingImage("O"),
     overlay=ExistingImage("O"),
+    initial_counter=3,
     localizations={
         'en': LocalizedText(
             name="Quiz Show{{PLURAL:$1||s}}",
@@ -1184,17 +1185,16 @@ class XMark(Enchantment):
     name="MTT Chainsaw",
     description=(
         "{{KW:MAGIC}}: Choose a monster. "
-        "{{KW:DELAY}}: {{KW:PROGRAM}} (6): "
-        "If this isn't {{KW:SILENCE|override=Silenced}}, kill the target. "
+        "{{KW:DELAY}}: {{KW:PROGRAM}} (3): Kill it. "
         "{{KW:SUPPORT}}: Reduce the {{KW:PROGRAM}} by 1."
     ),
     rarity=CardRarity.EPIC,
     expansion=Expansion.BASE,
-    cost=4,
+    cost=7,
     attack=3,
-    hp=6,
+    hp=7,
     statuses={
-        PROGRAM: 6,
+        PROGRAM: 3,
     },
     image=CustomImage("images/Chainsaw.png"),
     localizations={
@@ -1215,12 +1215,8 @@ class MTTChainsaw(Monster):
     delay = Check(
         ~chosen_monster.dead
     ).to(
-        Check(
-            SELF & ~HAS_KEYWORD(SILENCED)
-        ).to(
-            Program(SELF.status(PROGRAM)).to(
-                chosen_monster.kill()
-            )
+        Program(SELF.status(PROGRAM)).to(
+            chosen_monster.kill()
         )
     )
 
@@ -1585,8 +1581,7 @@ class WaterfallFlower(Monster):
     1_000_043,
     name="Golden Statue",
     description=(
-        "{{KW:TAUNT}}. "
-        "{{KW:MAGIC}}: Look at all CUSTOM cards and add one to your hand."
+        "{{KW:MAGIC}}: Look at all other CUSTOM cards and add one to your hand."
     ),
     rarity=CardRarity.LEGENDARY,
     expansion=Expansion.BASE,
@@ -1594,7 +1589,6 @@ class WaterfallFlower(Monster):
     attack=1,
     hp=3,
     tribes=[Tribe.DOG],
-    keywords=TAUNT,
     image=CustomImage("images/Dog_Statue.png"),
     localizations={
         'en': LocalizedText(
@@ -1607,6 +1601,8 @@ class GoldenStatue(Monster):
         (
             CARD_LIBRARY
             & (TEMPLATE_ID >= 1000000)
+            & ~(RARITY == CardRarity.TOKEN)
+            & ~(TEMPLATE_NAME == "Golden Statue")
         ) >> GENERATE_CARD()
     ).to(
         CHOICE_SELECTED.to_hand()
@@ -1836,3 +1832,278 @@ class CheeseBank(Monster):
 )
 class QC(Monster):
     magic = DrawUpTo(4, group=(RARITY == CardRarity.BASE))
+
+
+@card(
+    1_000_051,
+    name="Sousborg",
+    description=(
+        "{{KW:TAUNT}}. After this kills a monster, add a {{CARD:596|1}} to your deck. "
+        "{{KW:BULLSEYE}}: Send all {{CARD:596|2}} in your deck to the top."
+    ),
+    rarity=CardRarity.RARE,
+    expansion=Expansion.UTY,
+    cost=6,
+    attack=4,
+    hp=8,
+    keywords=TAUNT,
+    image=CustomImage("images/Sousborg.png"),
+    localizations={
+        'en': LocalizedText(
+            name="Sousborg{{PLURAL:$1||s}}",
+        ),
+    },
+)
+class Sousborg(Monster):
+    send_vegetable: Var[Card] = Var(Card)
+
+    @on_event(MonsterKilledResult)
+    def on_monster_killed(self, res: MonsterKilledResult, game, **kwargs):
+        if res.killer_id != self.id:
+            return None
+
+        return GENERATE_CARD("Vegetables").to_deck()
+
+    bullseye = (
+        ForEach(
+            DECK & (TEMPLATE_NAME == "Vegetables"),
+            var=send_vegetable,
+            effect=send_vegetable.to_deck(pos='top')
+        )
+    )
+
+
+@card(
+    1_000_052,
+    name="Asgore Plush",
+    description=(
+        "Other damaged monsters take +2 {{DMG}}."
+    ),
+    rarity=CardRarity.RARE,
+    expansion=Expansion.UTY,
+    cost=3,
+    attack=3,
+    hp=3,
+    image=CustomImage("images/Asgore_Plush.png"),
+    localizations={
+        'en': LocalizedText(
+            name="Asgore Plush{{PLURAL:$1||es}}",
+        ),
+    },
+)
+class AsgorePlush(Monster):
+    def iter_modifiers(self, game):
+        if self.zone is not CardZone.BOARD:
+            return
+
+        yield IntModifier(
+            kind=ModKind.DAMAGE,
+            layer=DamageLayer.ADD,
+            source=self,
+            description="Damaged monsters take +2 DMG",
+            applies=lambda q: (
+                (q.target is not self)
+                and isinstance(q.target, Monster)
+                and (q.target.hp_missing > 0)
+            ),
+            apply=lambda damage, q: damage + 2,
+        )
+
+
+@card(
+    1_000_053,
+    name="Pusher Flower",
+    description=(
+        "After you play a monster costing 2+ {{GOLD}}, "
+        "deal 3 {{DMG}} to the monster in front of it."
+    ),
+    rarity=CardRarity.RARE,
+    expansion=Expansion.DELTARUNE,
+    cost=6,
+    attack=4,
+    hp=5,
+    tribes=[Tribe.PLANT],
+    image=CustomImage("images/Pusher_Flower.png"),
+    localizations={
+        'en': LocalizedText(
+            name="Pusher Flower{{PLURAL:$1||s}}",
+        ),
+    },
+)
+class PusherFlower(Monster):
+    @on_event(CardPlayedResult)
+    def on_card_played(self, res: CardPlayedResult, game, **kwargs):
+        if res.player_id != self.controller_id:
+            return None
+
+        if res.card.cost < 2:
+            return None
+
+        card_ = game.entity(res.card_id)
+        if not isinstance(card_, Monster):
+            return None
+
+        return FRONT(RESOLVE_ENTITY(res.card_id)).hit(3)
+
+
+@card(
+    1_000_054,
+    name="Garden Fox",
+    description=(
+        "Kon kon~"
+    ),
+    rarity=CardRarity.COMMON,
+    expansion=Expansion.DELTARUNE,
+    cost=1,
+    attack=1,
+    hp=3,
+    tribes=[Tribe.ALL],
+    image=CustomImage("images/Garden_Fox.png"),
+    localizations={
+        'en': LocalizedText(
+            name="Garden Fox{{PLURAL:$1||es}}",
+        ),
+    },
+)
+class GardenFox(Monster):
+    magic = ()
+
+
+@card(
+    1_000_055,
+    name="Trash Pile",
+    description=(
+        "After a non-{{KW:GENERATED}} non-{{RARITY:DETERMINATION}} "
+        "ally monster dies, add a copy of it to your hand."
+    ),
+    rarity=CardRarity.RARE,
+    expansion=Expansion.DELTARUNE,
+    cost=5,
+    attack=5,
+    hp=5,
+    image=CustomImage("images/Pile_of_Trash.png"),
+    localizations={
+        'en': LocalizedText(
+            name="Trash Pile{{PLURAL:$1||s}}",
+        ),
+    },
+)
+class TrashPile(Monster):
+    @on_event(MonsterKilledResult)
+    def on_monster_killed(self, res: MonsterKilledResult, game, **kwargs):
+        if res.monster.controller_id != self.controller_id:
+            return None
+
+        if res.monster.template.rarity == CardRarity.DETERMINATION:
+            return None
+
+        if res.monster.is_generated:
+            return None
+
+        return (RESOLVE_ENTITY(res.monster_id) >> COPY()).to_hand()
+
+
+@card(
+    1_000_056,
+    name="Spellbook",
+    description=(
+        "{{KW:MAGIC}}: Cast a random 1-{{COST}} spell on each ally monster. "
+        "{{KW:PROGRAM}} (2): 2-{{COST}} spells instead."
+    ),
+    rarity=CardRarity.RARE,
+    expansion=Expansion.DELTARUNE,
+    cost=4,
+    attack=4,
+    hp=5,
+    statuses={
+        PROGRAM: 2,
+    },
+    image=CustomImage("images/Magic_Book.png"),
+    localizations={
+        'en': LocalizedText(
+            name="Spellbook{{PLURAL:$1||s}}",
+        ),
+    },
+)
+class Spellbook(Monster):
+    monster: Var[Card] = Var(Card)
+    chosen_spell: Var[Card] = Var(Card)
+    spell_cost: Var[int] = Var(int)
+
+    magic = (
+        SetVar(var=spell_cost,value=1)
+        >> Program(2).to(
+            SetVar(var=spell_cost,value=2)
+        )
+        >> ForEach(
+            ALLY_MONSTERS,
+            var=monster,
+            effect=(
+                SetVar(
+                    var=chosen_spell,
+                    value=GENERATE_CARD(
+                        (
+                            CARD_LIBRARY
+                            & IS_SPELL
+                            & NON_TOKEN
+                            & (COST == spell_cost)
+                        ) >> RANDOM(1)
+                    )
+                )
+                >> Cast(
+                    card=chosen_spell,
+                    controller=YOU,
+                    effect_target=monster
+                )
+            )
+        )
+    )
+
+
+@card(
+    1_000_057,
+    name="Greater Bandit",
+    description=(
+        "{{KW:NEED}}: Ally monsters have 6+ total stat buffs. "
+        "{{KW:MAGIC}}: Add {{CARD:525|1}} to your hand "
+        " and the top of your deck with +2 {{ATK}}."
+    ),
+    rarity=CardRarity.RARE,
+    expansion=Expansion.DELTARUNE,
+    cost=6,
+    attack=5,
+    hp=6,
+    tribes=[Tribe.DOG],
+    image=CustomImage("images/Greater_Bandit.png"),
+    localizations={
+        'en': LocalizedText(
+            name="Greater Bandit{{PLURAL:$1||s}}",
+        ),
+    },
+)
+class GreaterBandit(Monster):
+    _total_atk_buffs=SUM(ALLY_MONSTERS, ATTACK-BASE_ATTACK)
+    _total_hp_buffs=SUM(ALLY_MONSTERS, HP-BASE_HP)
+    _total_cost_buffs=SUM(ALLY_MONSTERS, BASE_COST-COST)
+    generated_card: Var[Card] = Var(Card)
+
+    need = (
+        _total_atk_buffs
+        + _total_hp_buffs
+        + _total_cost_buffs
+    ) >= 6
+
+    magic = (
+        SetVar(
+            var=generated_card,
+            value=GENERATE_CARD("Too Many Dogs")
+        )
+        >> generated_card.buff(attack=+2)
+        >> generated_card.to_hand()
+        >> SetVar(
+            var=generated_card,
+            value=GENERATE_CARD("Too Many Dogs")
+        )
+        >> generated_card.buff(attack=+2)
+        >> generated_card.to_deck(pos='top')
+    )
