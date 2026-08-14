@@ -589,18 +589,12 @@ class MilkLooker(Monster):
 
 @card(678)
 class Cauldron(Monster):
-    generated_card: Var[Card] = Var(Card)
+    magic = (
+        GENERATE_CARD("Spincake").to_hand()
+    )
 
     shock = (
-        SetVar(var=generated_card, value=GENERATE_CARD("Spincake"))
-        >> generated_card.set_base_stats(cost=1, attack=1, hp=1)
-        >> generated_card.add_keyword(HASTE)
-        >> generated_card.buff(
-            cost=TRIGGER_CARD.cost // 2,
-            attack=TRIGGER_CARD.cost // 2,
-            hp=TRIGGER_CARD.cost // 2,
-        )
-        >> generated_card.to_hand()
+        ((HAND & IS_MONSTER & GENERATED) >> RANDOM(3)).buff(attack=+1, hp=+1)
     )
 
 
@@ -643,15 +637,24 @@ class FlyingHeads(Monster):
 
 @card(755)
 class SpamtonPoster(Monster):
-    magic = YOU.draw((DECK & IS_SPELL).first())
+    shock = GENERATE_CARD(
+        "Hyperlink Blocked",
+        controller=OPPONENT
+    ).to_deck(controller=OPPONENT, pos='bottom')
 
-    shock = For(
-        TRIGGER_CARD.cost,
-        GENERATE_CARD(
-            "Hyperlink Blocked",
-            controller=OPPONENT
-        ).to_deck(controller=OPPONENT)
-    )
+    @on_event(EntityDamagedResult)
+    def on_entity_damaged(self, res: EntityDamagedResult, game, **kwargs):
+        if res.target_id != self.id:
+            return None
+
+        if res.killed:
+            return None
+
+        return (
+            OPPONENT_DECK & (TEMPLATE_NAME == "Hyperlink Blocked")
+        ).first().erase().to(
+            SELF.heal(SELF.max_hp - SELF.hp)
+        )
 
 
 @card(756)
