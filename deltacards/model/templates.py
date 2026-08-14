@@ -28,6 +28,7 @@ class CardTemplate:
     keywords: CardKeyword
     statuses: dict[CardStatusId, int]
     active_abilities: set[CardToggleableAbility]
+    works_in_hand: bool = False
     expansion: Expansion
     tribes: tuple[Tribe, ...]
     soul_id: str | None
