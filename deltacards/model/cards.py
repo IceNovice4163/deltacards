@@ -121,6 +121,7 @@ class Card(Entity, Generic[TTemplate]):
         self.keywords = self.template.keywords
         self.statuses = self.template.statuses.copy()
         self.active_abilities = self.template.active_abilities.copy()
+        self.works_in_hand = self.template.works_in_hand
 
         self.buffs = CardBuffs()
         self.caught_card: CaughtCardData | None = None
@@ -297,6 +298,7 @@ class Card(Entity, Generic[TTemplate]):
         self.keywords = other.keywords & ~CardKeyword.HASTE  # exact copies don't copy Haste
         self.statuses = other.statuses.copy()
         self.active_abilities = other.active_abilities.copy()
+        self.works_in_hand = other.works_in_hand
         self.buffs = replace(other.buffs)
         self.caught_card = replace(other.caught_card) if other.caught_card is not None else None
 
@@ -310,6 +312,7 @@ class Card(Entity, Generic[TTemplate]):
             keywords=self.keywords,
             statuses=self.statuses.copy(),
             active_abilities=self.active_abilities.copy(),
+            works_in_hand=self.works_in_hand,
             buffs=replace(self.buffs),
             caught_card=replace(self.caught_card) if self.caught_card is not None else None,
             zone=self.zone,
@@ -398,6 +401,7 @@ class Monster(Card[MonsterTemplate]):
         self.keywords = self.template.keywords
         self.statuses = self.template.statuses.copy()
         self.active_abilities = self.template.active_abilities.copy()
+        self.works_in_hand = self.template.works_in_hand
         self.caught_card = None
 
         self.age = 0
