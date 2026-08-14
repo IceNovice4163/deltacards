@@ -31,6 +31,7 @@ class CardSnapshot(EntitySnapshot):
     keywords: CardKeyword
     statuses: dict[CardStatusId, int]
     active_abilities: set[CardToggleableAbility]
+    works_in_hand: bool
     buffs: 'CardBuffs'
     caught_card: 'CaughtCardData | None'
 
